@@ -126,13 +126,11 @@ b) 50 000 photos téléversées par les utilisateurs d'une application ;
 c) les journaux (logs) archivés chaque nuit ;
 d) le système de fichiers où un serveur web écrit ses fichiers temporaires.
 
-**Q1.2** — Pourquoi ne peut-on pas attacher un même volume Cinder à deux instances qui écrivent en même temps ? Que risquerait-on ?
+**Q1.2** — Quelle différence faites-vous entre un snapshot et une sauvegarde ? Lequel protège contre une panne du serveur qui héberge les volumes ?
 
-**Q1.3** — Quelle différence faites-vous entre un snapshot et une sauvegarde ? Lequel protège contre une panne du serveur qui héberge les volumes ?
+**Q1.3** — Dans Swift, on ne peut pas renommer ni modifier une partie d'un objet. Comment feriez-vous pour « renommer » `rapport.pdf` en `rapport-final.pdf` ?
 
-**Q1.4** — Dans Swift, on ne peut pas renommer ni modifier une partie d'un objet. Comment feriez-vous pour « renommer » `rapport.pdf` en `rapport-final.pdf` ?
-
-**Q1.5** — Le compte Swift s'appelle `AUTH_<id du projet>`. Qu'est-ce que cela implique pour deux projets qui créent chacun un conteneur `web-site` ?
+**Q1.4** — Le compte Swift s'appelle `AUTH_<id du projet>`. Qu'est-ce que cela implique pour deux projets qui créent chacun un conteneur `web-site` ?
 
 ---
 
