@@ -298,13 +298,6 @@ openstack console log show vm-web | grep -i cloud-init
 
 #### d) Tester le service web
 
-Si ce n'est pas déjà fait (Partie 0), activez le bridge externe `br-ex`, qui relie l'hôte au réseau des IP flottantes :
-
-```bash
-sudo ip addr add 172.24.4.1/24 dev br-ex
-sudo ip link set br-ex up
-```
-
 Définissez les fonctions `web` et `relaunch_web`, qui testent et relancent le serveur web :
 
 ```bash
