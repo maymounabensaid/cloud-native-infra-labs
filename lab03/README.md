@@ -34,21 +34,23 @@ openstack hypervisor list
 > **Q1.** Quels services Nova apparaissent dans `openstack compute service list` ? Expliquez en une phrase le rôle de chacun (`nova-scheduler`, `nova-conductor`, `nova-compute`).
 
 > **Q2.** Observez les colonnes **Host**, **Zone** et **Updated At**.
+>
 > a) Tous les services tournent sur le même hôte : pourquoi ? Dans un déploiement en production avec plusieurs serveurs, où trouverait-on `nova-compute`, `nova-scheduler` et `nova-conductor` ? Déduisez-en pourquoi `nova-compute` est dans la zone `nova` et les autres dans la zone `internal`.
+>
 > b) Relancez la commande après quelques secondes : que remarquez-vous dans **Updated At** ? À quoi sert, selon vous, ce mécanisme ?
-> 
+
 ## Partie 2 — Glance : gestion des images
 
-### 1.1 Explorer les images existantes
+### 2.1 Explorer les images existantes
 
 ```bash
 openstack image list
 openstack image show <id-image-cirros>
 ```
 
-> **Q2.** Relevez le format disque (`disk_format`), le format conteneur (`container_format`), la taille, la visibilité et le propriétaire de l'image CirrOS.
+> **Q3.** Relevez le format disque (`disk_format`), le format conteneur (`container_format`), la taille, la visibilité et le propriétaire de l'image CirrOS.
 
-### 1.2 Importer une image Ubuntu cloud
+### 2.2 Importer une image Ubuntu cloud
 
 ```bash
 wget https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04-minimal-cloudimg-amd64.img
@@ -58,7 +60,7 @@ wget https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04
 qemu-img info ubuntu-24.04-minimal-cloudimg-amd64.img
 ```
 
-> **Q3.** Quel est le format réel du fichier selon `qemu-img info` ? Comparez sa taille sur disque (*disk size*) et sa taille virtuelle (*virtual size*). Pourquoi ces deux valeurs diffèrent-elles ?
+> **Q4.** Quel est le format réel du fichier selon `qemu-img info` ? Comparez sa taille sur disque (*disk size*) et sa taille virtuelle (*virtual size*). Pourquoi ces deux valeurs diffèrent-elles ?
 
 Créez l'image dans Glance :
 
@@ -74,13 +76,13 @@ openstack image create ubuntu-24.04-minimal \
     --private
 ```
 
-> **Q4.** À quoi servent `--min-disk` et `--min-ram` ?
+> **Q5.** À quoi servent `--min-disk` et `--min-ram` ?
 
-### 1.3 Visibilité et partage entre projets
+### 2.3 Visibilité et partage entre projets
 
 Glance propose quatre niveaux de visibilité : `private`, `shared`, `community`, `public`.
 
-#### a) Créer un projet et un utilisateur de test 
+#### a) Créer un projet et un utilisateur de test
 
 Avec les identifiants `admin` :
 
@@ -105,6 +107,7 @@ openstack image list
 > **Note :** `openrc` charge les paramètres communs à tout le cloud (adresse de Keystone, région, domaine) ; ses deux arguments fixent l'utilisateur et le projet. Le mot de passe doit être redéfini, car `openrc` utilise par défaut celui de l'administrateur. Vérifiez votre identité avec `env | grep OS_ | grep -v PASSWORD`.
 >
 > Chaque terminal conserve ses propres variables d'environnement : le premier reste connecté en `admin`, le second en `student-lab03`. Comparez la sortie de `openstack image list` dans les deux terminaux.
+
 #### c) Partager l'image avec le projet
 
 Dans le **premier terminal** (admin) :
@@ -131,12 +134,13 @@ Vérifiez à nouveau le statut du membre dans le premier terminal :
 openstack image member list ubuntu-24.04-minimal
 ```
 
-> **Q5.** L'image est-elle visible pour `student-lab03` **avant** le partage ? Après le partage mais **avant** l'acceptation ? Après l'acceptation ? Quel est le statut du membre (`pending`, `accepted`, `rejected`) à chaque étape ?
+> **Q6.** L'image est-elle visible pour `student-lab03` **avant** le partage ? Après le partage mais **avant** l'acceptation ? Après l'acceptation ? Quel est le statut du membre (`pending`, `accepted`, `rejected`) à chaque étape ?
 >
-> **Q6.** Quelle différence entre une image `shared` et une image `community` ? Qui peut rendre une image `public` et pourquoi cette opération est-elle réservée à ce rôle ?
+> **Q7.** Quelle différence entre une image `shared` et une image `community` ? Qui peut rendre une image `public` et pourquoi cette opération est-elle réservée à ce rôle ?
+
 ---
 
-## Partie 2 — Les gabarits (flavors)
+## Partie 3 — Les gabarits (flavors)
 
 ```bash
 openstack flavor list
@@ -156,15 +160,15 @@ openstack flavor create lab03.private --vcpus 1 --ram 512 --disk 4 --private
 openstack flavor set lab03.private --project project-lab03
 ```
 
-> **Q7.** Peut-on lancer l'image Ubuntu avec le gabarit `m1.tiny` ? Testez puis expliquez le message obtenu en lien avec `--min-disk` et `--min-ram`.
+> **Q8.** Peut-on lancer l'image Ubuntu avec le gabarit `m1.tiny` ? Testez puis expliquez le message obtenu en lien avec `--min-disk` et `--min-ram`.
 >
-> **Q8.** Le gabarit `lab03.private` apparaît-il dans `openstack flavor list` lorsqu'on est connecté avec un autre projet ? À quoi sert un gabarit privé dans un cloud d'entreprise ?
+> **Q9.** Dans le **premier terminal** (`admin`), comparez `openstack flavor list` et `openstack flavor list --all`. Dans le **second terminal** (`student-lab03`), lancez `openstack flavor list`. Où le gabarit `lab03.private` apparaît-il, et pourquoi ? À quoi sert un gabarit privé dans un cloud d'entreprise ?
 
 ---
-## Partie 3 — Personnalisation au démarrage avec cloud-init
+## Partie 4 — Personnalisation au démarrage avec cloud-init
 
 
-- **cloud-init** est l'outil standard de configuration des instances cloud au premier démarrage. Il est préinstallé dans la plupart des images cloud (Ubuntu, Debian, Fedora, CentOS…). 
+- **cloud-init** est l'outil standard de configuration des instances cloud au premier démarrage. Il est préinstallé dans la plupart des images cloud (Ubuntu, Debian, Fedora, CentOS…).
 - Au boot, il interroge le service de métadonnées d'OpenStack (`http://169.254.169.254`) pour récupérer le nom d'hôte, la clé SSH et les **user-data** fournies à la création de l'instance (`--user-data`), puis il les applique.
 
 - Les user-data peuvent prendre deux formes, toutes deux exécutées par cloud-init :
@@ -174,7 +178,7 @@ openstack flavor set lab03.private --project project-lab03
 | Approche            | **impérative** : vous écrivez *comment* faire, commande par commande | **déclarative** : vous décrivez *l'état voulu* (paquets, utilisateurs, fichiers…) et cloud-init s'en charge |
 | Portabilité         | dépend de la distribution (`apt`, `dnf`, chemins…)                   | les modules cloud-init s'adaptent à la distribution                                                         |
 
-### 3.1 Préparer le réseau et l'accès à l'instance
+### 4.1 Préparer le réseau et l'accès à l'instance
 
 Toutes les commandes de cette partie sont exécutées sur l'instance EC2, avec les identifiants `admin` (premier terminal).
 
@@ -216,16 +220,16 @@ openstack keypair create key-lab03 > key-lab03.pem
 chmod 600 key-lab03.pem
 ```
 
-### 3.2 Écrire le fichier user-data
+### 4.2 Écrire le fichier user-data
 
-Le fichier doit être créé dans le même répertoire que la clé (votre répertoire personnel), car la commande `openstack server create` de la section 3.3 y fera référence :
+Le fichier doit être créé dans le même répertoire que la clé (votre répertoire personnel), car la commande `openstack server create` de la section 4.3 y fera référence :
 
 ```bash
 cd ~
 nano web-init.yaml
 ```
 
-Collez le contenu suivant, puis enregistrez et quittez  :
+Collez le contenu suivant, puis enregistrez et quittez :
 
 ```yaml
 #cloud-config
@@ -261,7 +265,7 @@ La dernière commande valide la syntaxe du fichier avec l'outil cloud-init insta
 
 > **Sécurité :** le contenu du user-data reste lisible par tout processus de la VM pendant toute sa durée de vie. N'y placez jamais de mot de passe, de clé privée ou de jeton d'accès.
 
-### 3.3 Lancer l'instance
+### 4.3 Lancer l'instance
 
 #### a) Créer l'instance
 
@@ -325,16 +329,16 @@ Le résultat attendu est la page `<h1> Lab 03 - Instance configured with cloud-i
 
 **Diagnostic :** si `web` ne répond pas, le message d'erreur de `curl` indique où chercher :
 
-| Erreur                                            | Signification                                            | Action                                                                              |     |
-| ------------------------------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------- | --- |
-| Refus immédiat (*Failed to connect … after 0 ms*) | La VM répond, mais aucun service n'écoute sur le port 80 | Relancer le serveur : `relaunch_web` puis `web`                                     |     |
-| Délai dépassé (*timed out*) ou ping sans réponse  | Problème réseau, ou VM pas encore démarrée               | Vérifier `br-ex` (Partie 0), attendre la fin du démarrage (console), puis réessayer |     |
+| Erreur                                            | Signification                                            | Action                                                                                                                    |
+| ------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Refus immédiat (*Failed to connect … after 0 ms*) | La VM répond, mais aucun service n'écoute sur le port 80 | Relancer le serveur : `relaunch_web` puis `web`                                                                           |
+| Délai dépassé (*timed out*) ou ping sans réponse  | Problème réseau, ou VM pas encore démarrée               | Vérifier `br-ex` (voir [`common/README.md`](../common/README.md)), attendre la fin du démarrage (console), puis réessayer |
 
-## Partie 4 — Cycle de vie d'une instance
+## Partie 5 — Cycle de vie d'une instance
 
 Une instance passe par plusieurs états au cours de sa vie : active, arrêtée, en pause, suspendue, mise en réserve… Dans cette partie, vous allez déclencher chacune de ces opérations et observer leur effet à deux niveaux : **côté Nova** (ce qu'OpenStack enregistre) et **côté hyperviseur** (ce que libvirt fait réellement sur l'hôte).
 
-Toutes les commandes sont exécutées sur l'instance EC2, avec les identifiants `admin`, dans le **même terminal qu'en Partie 3** (la variable `FIP` et les fonctions `web` et `relaunch_web` y sont déjà définies).
+Toutes les commandes sont exécutées sur l'instance EC2, avec les identifiants `admin`, dans le **même terminal qu'en Partie 4** (la variable `FIP` et les fonctions `web` et `relaunch_web` y sont déjà définies).
 
 ### Outils d'observation
 
@@ -378,11 +382,11 @@ state() {
 }
 ```
 
-### 4.1 Consignes
+### 5.1 Consignes
 
-- Pour chaque opération, relevez le **statut Nova**, le `vm_state`, le `power_state` et l'**état libvirt** : ces valeurs serviront à compléter la Q9.
+- Pour chaque opération, relevez le **statut Nova**, le `vm_state`, le `power_state` et l'**état libvirt** : ces valeurs serviront à compléter la Q10.
 - **Attendez la fin de chaque opération.** Les commandes de cycle de vie rendent la main avant la fin de l'opération. Relancez `state` jusqu'à ce que `task_state` vaille `None` avant de passer à la commande suivante, sinon vous obtiendrez une erreur `409 Conflict`.
-- **Testez le serveur web après chaque opération inverse** (`start`, `unpause`, `resume`, `unshelve`, `reboot`) avec `web`. S'il ne répond pas, notez-le pour la Q9, puis relancez-le avec `relaunch_web` avant de passer à l'opération suivante.
+- **Testez le serveur web après chaque opération inverse** (`start`, `unpause`, `resume`, `unshelve`, `reboot`) avec `web`. S'il ne répond pas, notez-le pour la Q10, puis relancez-le avec `relaunch_web` avant de passer à l'opération suivante.
 
 > **Nouveau terminal ?** Les fonctions `web`, `relaunch_web` et `state` ainsi que la variable `FIP` n'existent que dans le terminal où elles ont été définies. Redéfinissez-les avant de continuer.
 
@@ -442,28 +446,28 @@ state
 web
 ```
 
-> **Q9.** Complétez le tableau suivant à partir de vos observations :
+> **Q10.** Complétez le tableau suivant à partir de vos observations :
 
 | Opération | Statut Nova (`status`) | État libvirt (colonne **State** de `virsh`) | Processus QEMU en cours ? (colonne **Id** de `virsh`) | Serveur web actif après l'opération inverse ? |
-|---|---|---|---|---|
-| stop | | | | |
-| pause | | | | |
-| suspend | | | | |
-| shelve | | | | |
+| --------- | ---------------------- | ------------------------------------------- | ----------------------------------------------------- | --------------------------------------------- |
+| stop      |                        |                                             |                                                       |                                               |
+| pause     |                        |                                             |                                                       |                                               |
+| suspend   |                        |                                             |                                                       |                                               |
+| shelve    |                        |                                             |                                                       |                                               |
 
-> **Q10.** Après `unpause` et `resume`, le serveur web répond sans avoir été relancé ; après `start` et `unshelve`, il faut le relancer. Comment l'expliquez-vous ? Pour `pause` et `suspend`, où le contenu de la mémoire de l'instance est-il conservé ?
+> **Q11.** Après `unpause` et `resume`, le serveur web répond sans avoir été relancé ; après `start` et `unshelve`, il faut le relancer. Comment l'expliquez-vous ? Pour `pause` et `suspend`, où le contenu de la mémoire de l'instance est-il conservé ?
 
-> **Q10.** Après `shelve`, une nouvelle image apparaît dans Glance. Pourquoi ? Que se passe-t-il au moment du `unshelve` ?
+> **Q12.** Après `shelve`, une nouvelle image apparaît dans Glance. Pourquoi ? Que se passe-t-il au moment du `unshelve` ?
 >
-> **Q11.** Différence entre `reboot --soft` et `reboot --hard` ?
+> **Q13.** Différence entre `reboot --soft` et `reboot --hard` ?
 
-### 4.1 Redimensionnement (resize)
+### 5.2 Redimensionnement (resize)
 
 Redimensionnez l'instance vers le gabarit `lab03.medium`, puis **annulez** l'opération :
 
 ```bash
 openstack server resize --flavor lab03.medium vm-web
-state                                  # attendre : VERIFY_RESIZE, task_state None
+state                                 # attendre : VERIFY_RESIZE, task_state None
 openstack server resize revert vm-web
 state                                 # attendre : ACTIVE — quel est le gabarit ?
 ```
@@ -484,29 +488,13 @@ openstack server resize --flavor m1.tiny vm-web
 openstack image show ubuntu-24.04-minimal -c min_disk
 ```
 
-> **Q12.** Quel est le statut de l'instance juste après le resize, avant confirmation ? Que permettent `openstack server resize revert` et `openstack server resize confirm` ?
+> **Q14.** Quel est le statut de l'instance juste après le resize, avant confirmation ? Que permettent `openstack server resize revert` et `openstack server resize confirm` ?
 >
-> **Q13.** Que se passe-t-il lors du redimensionnement vers `m1.tiny` et pourquoi ? Comparez la taille minimale indiquée dans le message d'erreur avec le `min_disk` de l'image Ubuntu : pourquoi ces deux valeurs diffèrent-elles ?
-
-### 4.2 Historique des actions
-
-```bash
-openstack server event list vm-web
-openstack server event show vm-web <request-id>      # choisissez le request-id du resize
-```
-
-> **Q14.** À quoi sert le `request-id` ? En quoi cet historique est-il utile en exploitation ?
-
-Avant de passer à la Partie 5, assurez-vous que le serveur web répond :
-
-```bash
-relaunch_web
-web
-```
+> **Q15.** Que se passe-t-il lors du redimensionnement vers `m1.tiny` et pourquoi ? Comparez la taille minimale indiquée dans le message d'erreur avec le `min_disk` de l'image Ubuntu : pourquoi ces deux valeurs diffèrent-elles ?
 
 ---
 
-## Partie 5 — Snapshots d'instance
+## Partie 6 — Snapshots d'instance
 
 Connectez-vous à la VM et ajoutez une ligne à la page d'accueil :
 
@@ -553,42 +541,53 @@ curl -sS -m 5 http://$FIP_CLONE
 ssh -i ~/key-lab03.pem ubuntu@$FIP_CLONE "cat /var/www/index.html"
 ```
 
-> **Q15.** Le clone contient-il la modification faite à la main ? Le serveur web est-il démarré automatiquement ? Expliquez.
+> **Q16.** Le clone contient-il la modification faite à la main ? Le serveur web est-il démarré automatiquement ? Expliquez.
 
-
+---
 
 ## Nettoyage
 
-- Supprimez toutes les ressources créées pendant ce lab. 
+Supprimez toutes les ressources créées pendant ce lab avec le script fourni, depuis le **premier terminal** (`admin`) :
 
-> L'ordre compte : une ressource ne peut être supprimée tant qu'une autre en dépend (un réseau relié à un routeur, un groupe de sécurité utilisé par une instance…). De plus, supprimer un projet **ne supprime pas** ses ressources : elles resteraient orphelines.
+```bash 
+source ~/devstack/openrc admin admin bash clean_lab03.sh 
+``` 
 
-### a) Ressources du projet (terminal `student-lab03`)
+> L'ordre compte : une ressource ne peut être supprimée tant qu'une autre en dépend (instance → IP flottante → routeur → réseau…). De plus, supprimer un projet **ne supprime pas** ses ressources : elles resteraient orphelines. Ouvrez `cleanup.sh` pour voir l'ordre suivi. 
+> 
+
+### Nettoyage manuel (si le script échoue ou pour procéder étape par étape)
+
+### a) Instances, images et IP flottantes
 
 ```bash
-# Instances et snapshot
 openstack server delete vm-web vm-web-clone --wait
-openstack image delete snap-vm-web
+openstack image delete snap-vm-web ubuntu-24.04-minimal
 
-# IP flottantes (supprimer une instance ne les libère pas)
-openstack floating ip delete $(openstack floating ip list -f value -c ID)
+# IP flottantes du lab (supprimer une instance ne les libère pas)
+openstack floating ip delete $FIP $FIP_CLONE
+```
 
+> Si les variables `FIP` et `FIP_CLONE` ont été perdues (nouveau terminal), repérez les IP flottantes non associées avec `openstack floating ip list --status DOWN`, puis supprimez-les par leur ID.
+
+### b) Réseau et accès
+
+```bash
 # Routeur, puis réseau (le sous-réseau est supprimé avec le réseau)
 openstack router remove subnet router-lab03 subnet-lab03
 openstack router unset --external-gateway router-lab03
 openstack router delete router-lab03
 openstack network delete net-lab03
 
-# Groupe de sécurité et paire de clés
+# Groupe de sécurité, paire de clés et fichiers locaux
 openstack security group delete sg-lab03
 openstack keypair delete key-lab03
-rm -f ~/key-lab03.pem
+rm -f ~/key-lab03.pem ~/web-init.yaml
 ```
 
-### b) Ressources d'administration (terminal `admin`)
+### c) Gabarits, utilisateur et projet
 
 ```bash
-openstack image delete ubuntu-24.04-minimal
 openstack flavor delete lab03.small lab03.medium lab03.private
 
 # Groupe de sécurité "default" créé automatiquement dans le projet
@@ -598,7 +597,7 @@ openstack user delete student-lab03
 openstack project delete project-lab03
 ```
 
-### c) Vérification (terminal `admin`)
+### d) Vérification
 
 ```bash
 openstack server list --all-projects
