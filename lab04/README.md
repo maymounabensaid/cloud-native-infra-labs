@@ -20,41 +20,50 @@
 1. Connectez-vous à votre instance EC2 avec `ssh devstack`. Si ce n'est pas encore configuré sur votre machine, suivez [common/ssh-setup.md](../common/ssh-setup.md).
 2. Si votre instance EC2 a été redémarrée depuis la dernière séance, remettez DevStack en état : [common/restore-after-reboot.md](../common/restore-after-reboot.md), étapes 1 à 4.
 3. Vérifiez qu'aucune ressource des labs précédents ne subsiste : même fichier, étape 5.
+
 ## Scénario
 
 Vous devez déployer un petit site web sur une instance OpenStack, avec deux exigences :
 
 - les **fichiers du site** sont publiés dans un espace de stockage accessible par HTTP, d'où n'importe quelle instance peut les récupérer → **Swift** (stockage objet) ;
-- les **données du serveur** ne doivent pas disparaître si l'instance est supprimée → **Cinder** (stockage bloc).
+- les **données du serveur** ne doivent pas disparaître si l'instance est supprimée → un volume **Cinder** (stockage bloc), attaché à l'instance.
+
+Le disque système de l'instance, lui, restera **éphémère** : il est géré par Nova, et non par Cinder, et disparaît avec l'instance. Seules les données placées sur le volume Cinder survivront.
+
 
 ---
 
 ## Partie 1 — Préparer l'environnement
 
-Swift (stockage objet) et le service de sauvegarde de Cinder ne sont pas encore installés. On les ajoute, puis on réinstalle DevStack.
+Par défaut, DevStack n'installe pas deux services nécessaires à ce lab :
 
->  La réinstallation **remet à zéro toutes les bases OpenStack**
+- **Swift**, le service de stockage objet ;
+- **cinder-backup**, le service qui sauvegarde les volumes Cinder (vers Swift).
+
+DevStack ne permet pas d'ajouter un service à une installation existante : il faut les déclarer dans `local.conf`, puis réinstaller DevStack.
+
+> La réinstallation **remet à zéro toutes les bases OpenStack** : les ressources des labs précédents (instances, images, réseaux créés à la main…) seront supprimées. DevStack recrée seulement les éléments par défaut : projets `admin` et `demo`, réseaux `public` et `private`, image CirrOS.
+
 
 ### 1.1 Modifier `local.conf`
 
+Ajoutez les services du lab à la fin de `local.conf` :
+
 ```bash
 cd ~/devstack
-grep -n '^\[\[' local.conf      # liste les sections du fichier
-nano local.conf
-```
+cat >> local.conf <<'EOF'
 
-**Si `[[local|localrc]]` est la seule section, ajoutez les lignes à la fin du fichier ; sinon, juste avant la deuxième section.**
-
-```ini
-# Lab 04 - stockage objet (Swift) et sauvegardes Cinder
+# Lab 04 - object storage (Swift) and Cinder backups
 enable_service s-proxy s-object s-container s-account
 enable_service c-bak
 SWIFT_HASH=lab04swifthash2026
 SWIFT_REPLICAS=1
+EOF
+
+cat local.conf      # vérifie le contenu complet du fichier
 ```
 
 > `SWIFT_HASH` sert à calculer l'emplacement des objets. Ne le modifiez jamais une fois Swift installé, sinon les objets existants deviennent introuvables.
-
 ### 1.2 Réinstaller dans `tmux`
 
 ```bash
@@ -64,7 +73,7 @@ cd ~/devstack
 ./stack.sh
 ```
 
-L'installation dure environ 20 minutes. Si la connexion SSH coupe : reconnectez-vous puis `tmux attach -t stack`.
+L'installation dure environ 15 minutes. Si la connexion SSH coupe : reconnectez-vous puis `tmux attach -t stack`.
 
 > **Pendant l'installation, faites la partie 2.**
 
@@ -80,14 +89,14 @@ openstack network list                                           # réseaux recr
 ip addr show br-ex                                               # le pont externe a son adresse
 ```
 
-| Commande | Attendu |
-|---|---|
-| `openstack service list` | `cinderv3` (block-storage) et `swift` (object-store) |
-| `openstack volume service list` | `cinder-scheduler`, `cinder-volume`, `cinder-backup` à l'état `up` |
-| `openstack object store account show` | compte `AUTH_<id>`, 0 conteneur |
-| `grep -i backup` | `backup_driver = cinder.backup.drivers.swift.SwiftBackupDriver`, `backup_swift_url` vers le port 8080 |
-| `openstack network list` | réseaux `public` et `private` |
-| `ip addr show br-ex` | une adresse `172.24.4.1/24` sur le pont |
+| Commande                              | Attendu                                                                                               |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `openstack service list`              | `cinderv3` (block-storage) et `swift` (object-store)                                                  |
+| `openstack volume service list`       | `cinder-scheduler`, `cinder-volume`, `cinder-backup` à l'état `up`                                    |
+| `openstack object store account show` | compte `AUTH_<id>`, 0 conteneur                                                                       |
+| `grep -i backup`                      | `backup_driver = cinder.backup.drivers.swift.SwiftBackupDriver`, `backup_swift_url` vers le port 8080 |
+| `openstack network list`              | réseaux `public` et `private`                                                                         |
+| `ip addr show br-ex`                  | une adresse `172.24.4.1/24` sur le pont                                                               |
 
 Dans Horizon, un menu **Project → Object Store → Containers** doit apparaître.
 
@@ -106,14 +115,25 @@ Dans Horizon, un menu **Project → Object Store → Containers** doit apparaît
 | Latence | faible | plus élevée (requêtes HTTP) |
 | Cas typiques | base de données, système de fichiers d'un serveur | images, sauvegardes, archives, fichiers statiques d'un site |
 | Équivalent AWS | EBS | S3 |
-
 ### 2.2 Cinder : volumes, snapshots, sauvegardes
 
 - **Volume** : disque persistant, indépendant de l'instance. On peut le détacher et le rattacher à une autre instance, mais à une seule à la fois.
-- **Snapshot** : copie en lecture seule d'un volume à un instant donné. Elle reste dans le même backend que le volume et sert à créer de nouveaux volumes.
-- **Sauvegarde (backup)** : copie complète du volume exportée **vers Swift**. Elle survit même si le backend Cinder est perdu.
+- **Snapshot** : état figé d'un volume à un instant donné, en lecture seule. Il est quasi instantané, car il ne recopie pas les données : il partage avec le volume les blocs qui n'ont pas changé. Il reste donc dans le **même backend** que le volume, et sert à créer de nouveaux volumes.
+- **Sauvegarde (backup)** : copie complète des données du volume, exportée **vers Swift**, hors du backend Cinder. Elle survit même si ce backend est perdu.
 
-> **Provisionnement fin (*thin provisioning*)** : la taille d'un volume est une taille *promise*, pas une taille réservée. Le backend n'alloue l'espace réel qu'au moment où des données sont effectivement écrites. Un volume de 2 Gio vide n'occupe donc presque rien sur l'hyperviseur.
+> **Provisionnement fin (*thin provisioning*)** : la taille d'un volume est une taille *promise*, pas une taille réservée. Si le backend le permet, l'espace réel n'est alloué qu'au moment où des données sont effectivement écrites.
+
+![Volume, snapshot et sauvegarde dans Cinder](images/lab04-cinder-concepts.png)
+
+**Ne pas confondre avec le snapshot d'instance du Lab 03**
+
+|                  | Snapshot d'instance (Lab 03)                                        | Snapshot de volume (Lab 04)                                        |
+| ---------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Bouton Horizon   | **Instances → Create Snapshot**                                     | **Volumes → Create Snapshot**                                      |
+| Service          | Nova                                                                | Cinder                                                             |
+| Ce qui est copié | le disque système (éphémère) de l'instance                          | un volume Cinder                                                   |
+| Résultat         | une **image Glance**, avec laquelle on lance de nouvelles instances | un **snapshot de volume**, avec lequel on crée de nouveaux volumes |
+| Où il est stocké | dans Glance                                                         | dans le même backend que le volume                                 |
 
 ### 2.3 Swift : compte, conteneur, objet
 
@@ -236,15 +256,16 @@ curl -I $URL/private/index.html       # même requête sur le conteneur privé
 
 **Q3.3** — Relevez le code HTTP renvoyé pour `site.tar.gz` et pour `private/index.html`. Expliquez la différence.
 
-**Q3.4** — Dans les en-têtes de `site.tar.gz`, relevez `Content-Length` et `Etag`. À quoi sert l'`Etag` ? (Indice : comparez-le avec `md5sum site.tar.gz`.)
-
-**Q3.5** — Pourquoi est-il pratique, pour la suite du lab, que l'archive soit dans un conteneur **public** ? Quel risque cela présenterait-il pour des données sensibles ?
 
 ---
 
 ## Partie 4 — Créer l'instance web et son volume
 
 Objectif : lancer une instance Debian accessible en SSH, puis lui attacher un volume Cinder qui contiendra les données du site.
+
+La figure ci-dessous résume les activités des parties 4 à 8. Revenez-y à chaque étape pour situer ce que vous faites.
+
+![Activités des parties 4 à 8](images/lab04-activites.png)
 
 ### 4.1 Ajouter l'image Debian (administrateur, en CLI)
 
@@ -265,14 +286,20 @@ Dans Horizon (connecté en `demo`) : **Project → Compute → Images**. L'image
 
 ### 4.2 Vérifier le réseau du projet
 
-DevStack a déjà créé un réseau pour le projet `demo`. Ouvrez **Project → Network → Network Topology** et repérez :
+Aux labs précédents, vous avez créé vous-mêmes réseau, sous-réseau et routeur. Ici, on réutilise le réseau créé automatiquement par DevStack pour le projet `demo`, pour deux raisons :
 
-- le réseau `private` (réseau du projet) ;
-- le routeur `router1` ;
-- le réseau externe `public`, auquel `router1` est relié.
+- la réinstallation de la partie 1 a supprimé vos réseaux, et DevStack a recréé son réseau par défaut ;
+- ce lab porte sur le **stockage** : le réseau par défaut suffit, et le recréer ne vous apprendrait rien de nouveau.
+
+Ouvrez **Project → Network → Network Topology** et repérez :
+
+| Élément | Rôle dans ce lab |
+|---|---|
+| le réseau `private` | réseau du projet : vos instances y reçoivent leur adresse (`10.0.0.x`) |
+| le routeur `router1` | relie `private` au réseau externe : il permet aux instances d'accéder à l'extérieur (`apt`, `curl` vers Swift) et rend possibles les IP flottantes |
+| le réseau externe `public` | réseau d'où proviennent les IP flottantes, joignables depuis l'EC2 |
 
 > Le réseau Neutron `private` n'a aucun lien avec le conteneur Swift `private` créé en partie 3 : ce sont deux services différents.
-
 ### 4.3 Créer un groupe de sécurité pour le serveur web
 
 **Project → Network → Security Groups → + Create Security Group**
@@ -396,7 +423,7 @@ Observez de nouveau **Status** et la colonne **Attached To**.
 
 **Q4.3** — Quel nom de périphérique Horizon indique-t-il dans **Attached To** ? Notez-le : vous le vérifierez depuis l'intérieur de l'instance en partie 5.
 
-**Q4.4** — Le volume fait 2 Gio. En repensant au provisionnement fin (section 2.2), combien d'espace réel pensez-vous qu'il occupe à ce stade sur l'hyperviseur ? (Vous le vérifierez en 5.6.)
+**Q4.4** — Le volume fait 2 Gio. En repensant au provisionnement fin (section 2.2), combien d'espace réel pensez-vous qu'il occupe à ce stade sur l'hyperviseur ? 
 
 ---
 
@@ -480,13 +507,11 @@ Repérez la ligne `volume-<ID de data-web>` : la colonne `LSize` donne la taille
 
 **Q5.1** — Quel nom porte le volume dans `lsblk` ? Est-ce le même que celui indiqué par Horizon dans **Attached To** (Q4.3) ? Pourquoi ne peut-on pas toujours se fier à ce nom ?
 
-**Q5.2** — Comparez le lien `virtio-...` de `/dev/disk/by-id/` avec l'ID du volume dans Horizon. Que constatez-vous ? En quoi est-ce utile quand plusieurs volumes sont attachés à la même instance ?
+**Q5.2** — Dans `/etc/fstab`, on a utilisé `LABEL=data` plutôt que `/dev/vdb`. Pourquoi est-ce plus sûr ?
 
-**Q5.3** — Dans `/etc/fstab`, on a utilisé `LABEL=data` plutôt que `/dev/vdb`. Pourquoi est-ce plus sûr ?
+**Q5.3 — À quoi sert l'option `nofail` ? Que se passerait-il sans elle si l'instance redémarrait alors que le volume a été détaché ?
 
-**Q5.4** — À quoi sert l'option `nofail` ? Que se passerait-il sans elle si l'instance redémarrait alors que le volume a été détaché ?
-
-**Q5.5** — Le système de fichiers ext4 a été créé **à l'intérieur de l'instance**. D'après vous, Cinder sait-il que ce volume contient un système de fichiers ext4 ? Justifiez avec la notion de stockage bloc vue en partie 2.
+**Q5.4** — Le système de fichiers ext4 a été créé **à l'intérieur de l'instance**. D'après vous, Cinder sait-il que ce volume contient un système de fichiers ext4 ? Justifiez avec la notion de stockage bloc vue en partie 2.
 
 ---
 
@@ -555,8 +580,6 @@ curl http://<floating_IP>            # même résultat, cette fois via l'IP flot
 ### Questions — Partie 6
 
 **Q6.1** — Le téléchargement de `site.tar.gz` depuis l'instance n'a demandé aucune authentification. Pourquoi ? Que faudrait-il faire si l'archive était dans le conteneur `private` ?
-
-**Q6.2** — Comparez l'empreinte `md5sum` obtenue dans l'instance avec l'`Etag` relevé en Q3.4. Que garantit cette comparaison ?
 
 **Q6.3** — L'instance a l'adresse `10.0.0.x` et le proxy Swift écoute sur l'adresse privée de l'EC2. Décrivez le chemin suivi par la requête `curl` (réseau `private`, routeur, réseau `public`, `br-ex`, EC2). Sur l'EC2, la commande `sudo journalctl -u devstack@s-proxy --no-pager | grep site.tar.gz` montre l'adresse source vue par Swift : laquelle est-ce, et pourquoi ?
 
@@ -666,8 +689,6 @@ curl http://<floating_IP>            # la page est de nouveau servie, à la mêm
 **Q7.3** — Reprenez votre réponse à Q6.4. Qu'est-ce qui a été perdu avec `web-01`, et comment l'a-t-on reconstruit ? Qu'est-ce qui a été conservé, et grâce à quoi ?
 
 **Q7.4** — Le script cloud-init ajoute la ligne `fstab` et configure nginx **avant** que le volume soit attaché. Pourquoi est-ce possible sans erreur ? (Pensez à l'option `nofail` et à la manière dont nginx lit les fichiers.)
-
-**Q7.5** — Au chapitre 1, on a vu le principe d'infrastructure immuable : les serveurs sont remplaçables (*cattle*) et non réparés à la main (*pets*). En quoi cette partie l'illustre-t-elle ? Quel rôle jouent respectivement cloud-init et le volume Cinder ?
 
 **Q7.6** — Pourquoi SSH a-t-il signalé un changement de clé d'hôte alors que l'adresse IP était la même ? Dans quel cas ce message devrait-il au contraire vous alerter ?
 
