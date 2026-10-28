@@ -15,6 +15,11 @@
 
 ---
 
+## Avant de commencer
+
+1. Connectez-vous à votre instance EC2 avec `ssh devstack`. Si ce n'est pas encore configuré sur votre machine, suivez [common/ssh-setup.md](../common/ssh-setup.md).
+2. Si votre instance EC2 a été redémarrée depuis la dernière séance, remettez DevStack en état : [common/restore-after-reboot.md](../common/restore-after-reboot.md), étapes 1 à 4.
+3. Vérifiez qu'aucune ressource des labs précédents ne subsiste : même fichier, étape 5.
 ## Scénario
 
 Vous devez déployer un petit site web sur une instance OpenStack, avec deux exigences :

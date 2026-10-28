@@ -14,10 +14,11 @@
 - Observer côté hyperviseur (**libvirt / KVM**) ce que Nova a réellement créé.
 
 ---
-> **Avant de commencer**
->
-> 1. Si votre instance EC2 a été redémarrée depuis la dernière séance, suivez la procédure de remise en état décrite dans [`common/README.md`](../common/README.md) (étapes 1 à 4).
-> 2. Vérifiez qu'aucune ressource des labs précédents ne subsiste : voir l'[étape 5](../common/README.md#5-start-from-a-clean-environment) du même fichier.
+## Avant de commencer
+
+1. Connectez-vous à votre instance EC2 avec `ssh devstack`. Si ce n'est pas encore configuré sur votre machine, suivez [common/ssh-setup.md](../common/ssh-setup.md).
+2. Si votre instance EC2 a été redémarrée depuis la dernière séance, remettez DevStack en état : [common/restore-after-reboot.md](../common/restore-after-reboot.md), étapes 1 à 4.
+3. Vérifiez qu'aucune ressource des labs précédents ne subsiste : même fichier, étape 5.
 
 ---
 
@@ -332,7 +333,7 @@ Le résultat attendu est la page `<h1> Lab 03 - Instance configured with cloud-i
 | Erreur                                            | Signification                                            | Action                                                                                                                    |
 | ------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | Refus immédiat (*Failed to connect … after 0 ms*) | La VM répond, mais aucun service n'écoute sur le port 80 | Relancer le serveur : `relaunch_web` puis `web`                                                                           |
-| Délai dépassé (*timed out*) ou ping sans réponse  | Problème réseau, ou VM pas encore démarrée               | Vérifier `br-ex` (voir [`common/README.md`](../common/README.md)), attendre la fin du démarrage (console), puis réessayer |
+| Délai dépassé (*timed out*) ou ping sans réponse  | Problème réseau, ou VM pas encore démarrée               | Vérifier `br-ex` (voir [`common/README.md`](ssh-setup.md)), attendre la fin du démarrage (console), puis réessayer |
 
 ## Partie 5 — Cycle de vie d'une instance
 
