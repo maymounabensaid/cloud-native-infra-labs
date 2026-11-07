@@ -82,21 +82,15 @@ L'installation dure environ 15 minutes. Si la connexion SSH coupe : reconnectez-
 ```bash
 source ~/devstack/openrc admin admin
 openstack service list | grep -Ei "cinder|volume|swift|object"   # services de stockage enregistrés
-openstack volume service list                                    # état des services Cinder
-openstack object store account show                              # compte Swift du projet
-grep -i backup /etc/cinder/cinder.conf                           # configuration des sauvegardes
-openstack network list                                           # réseaux recréés
-ip addr show br-ex                                               # le pont externe a son adresse
+openstack volume service list                          # état des services Cinder
+openstack object store account show                      # compte Swift du projet
 ```
 
-| Commande                              | Attendu                                                                                               |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `openstack service list`              | `cinderv3` (block-storage) et `swift` (object-store)                                                  |
-| `openstack volume service list`       | `cinder-scheduler`, `cinder-volume`, `cinder-backup` à l'état `up`                                    |
-| `openstack object store account show` | compte `AUTH_<id>`, 0 conteneur                                                                       |
-| `grep -i backup`                      | `backup_driver = cinder.backup.drivers.swift.SwiftBackupDriver`, `backup_swift_url` vers le port 8080 |
-| `openstack network list`              | réseaux `public` et `private`                                                                         |
-| `ip addr show br-ex`                  | une adresse `172.24.4.1/24` sur le pont                                                               |
+| Commande                              | Attendu                                                            |
+| ------------------------------------- | ------------------------------------------------------------------ |
+| `openstack service list`              | `cinderv3` (block-storage) et `swift` (object-store)               |
+| `openstack volume service list`       | `cinder-scheduler`, `cinder-volume`, `cinder-backup` à l'état `up` |
+| `openstack object store account show` | compte `AUTH_<id>`, 0 conteneur                                    |
 
 Dans Horizon, un menu **Project → Object Store → Containers** doit apparaître.
 
@@ -421,7 +415,7 @@ Observez de nouveau **Status** et la colonne **Attached To**.
 
 **Q4.2** — Relevez les états successifs du volume `data-web`, de sa création jusqu'à la fin de l'attachement. Que signifie chacun d'eux ?
 
-**Q4.3** — Quel nom de périphérique Horizon indique-t-il dans **Attached To** ? Notez-le : vous le vérifierez depuis l'intérieur de l'instance en partie 5.
+**Q4.3** — Quel nom de périphérique Horizon indique-t-il dans **Attached To** ?
 
 **Q4.4** — Le volume fait 2 Gio. En repensant au provisionnement fin (section 2.2), combien d'espace réel pensez-vous qu'il occupe à ce stade sur l'hyperviseur ? 
 
@@ -509,7 +503,7 @@ Repérez la ligne `volume-<ID de data-web>` : la colonne `LSize` donne la taille
 
 **Q5.2** — Dans `/etc/fstab`, on a utilisé `LABEL=data` plutôt que `/dev/vdb`. Pourquoi est-ce plus sûr ?
 
-**Q5.3 — À quoi sert l'option `nofail` ? Que se passerait-il sans elle si l'instance redémarrait alors que le volume a été détaché ?
+**Q5.3** — À quoi sert l'option `nofail` ? Que se passerait-il sans elle si l'instance redémarrait alors que le volume a été détaché ?
 
 **Q5.4** — Le système de fichiers ext4 a été créé **à l'intérieur de l'instance**. D'après vous, Cinder sait-il que ce volume contient un système de fichiers ext4 ? Justifiez avec la notion de stockage bloc vue en partie 2.
 
@@ -541,8 +535,6 @@ L'archive est dans un conteneur **public** : un simple `curl` suffit, sans jeton
 ```bash
 cd ~
 curl -O http://<Private_IP_EC2>:8080/v1/AUTH_<project_id>/web-site/site.tar.gz   # -O : garde le nom du fichier distant
-ls -lh site.tar.gz                                                               # vérifie la taille
-md5sum site.tar.gz                                                               # empreinte du fichier reçu
 ```
 
 ### 6.3 Décompresser le site sur le volume
@@ -558,9 +550,7 @@ Par défaut, nginx sert `/var/www/html`, qui se trouve sur le disque système (�
 
 ```bash
 sudo sed -i 's#root /var/www/html;#root /data/site;#' /etc/nginx/sites-available/default   # change le dossier servi
-grep -n 'root ' /etc/nginx/sites-available/default                                          # vérifie : root /data/site;
-sudo nginx -t                                                                               # vérifie la syntaxe de la configuration
-sudo systemctl reload nginx                                                                 # applique la configuration
+sudo systemctl reload nginx   # applique la configuration
 ```
 
 ### 6.5 Tester le site
@@ -581,12 +571,9 @@ curl http://<floating_IP>            # même résultat, cette fois via l'IP flot
 
 **Q6.1** — Le téléchargement de `site.tar.gz` depuis l'instance n'a demandé aucune authentification. Pourquoi ? Que faudrait-il faire si l'archive était dans le conteneur `private` ?
 
-**Q6.3** — L'instance a l'adresse `10.0.0.x` et le proxy Swift écoute sur l'adresse privée de l'EC2. Décrivez le chemin suivi par la requête `curl` (réseau `private`, routeur, réseau `public`, `br-ex`, EC2). Sur l'EC2, la commande `sudo journalctl -u devstack@s-proxy --no-pager | grep site.tar.gz` montre l'adresse source vue par Swift : laquelle est-ce, et pourquoi ?
-
-**Q6.4** — nginx est installé sur le disque système, le site sur le volume. Si l'on supprimait l'instance maintenant, qu'est-ce qui serait perdu et qu'est-ce qui serait conservé ?
+**Q6.2** — nginx est installé sur le disque système, le site sur le volume. Si l'on supprimait l'instance maintenant, qu'est-ce qui serait perdu et qu'est-ce qui serait conservé ?
 
 ---
-
 ## Partie 7 — Prouver la persistance
 
 Objectif : supprimer l'instance `web-01`, en lancer une nouvelle, lui rattacher le volume `data-web`… et retrouver le site intact, sans rien télécharger ni reformater.
@@ -652,7 +639,7 @@ runcmd:
 Depuis l'EC2, avant de vous connecter, supprimez l'empreinte enregistrée pour `web-01` :
 
 ```bash
-ssh-keygen -R <floating_IP>                   # retire l'ancienne clé d'hôte de ~/.ssh/known_hosts
+ssh-keygen -R <floating_IP>    # retire l'ancienne clé d'hôte de ~/.ssh/known_hosts
 ssh -i ~/.ssh/lab04-key debian@<floating_IP>
 ```
 
@@ -661,7 +648,6 @@ ssh -i ~/.ssh/lab04-key debian@<floating_IP>
 Dans `web-02` :
 
 ```bash
-cloud-init status --wait             # attend la fin du script cloud-init (doit afficher "done")
 lsblk                                # le volume est visible
 sudo mount -a                        # monte le volume grâce à la ligne fstab ajoutée par cloud-init
 df -h /data                          # /data est monté
@@ -675,22 +661,19 @@ curl http://localhost                # votre page s'affiche
 Depuis l'EC2 :
 
 ```bash
-curl http://<floating_IP>            # la page est de nouveau servie, à la même adresse
+curl http://<floating_IP>     # la page est de nouveau servie, à la même adresse
 ```
 
-**Faites une capture d'écran de `cat /data/proof.txt`, `hostname` et de la page pour votre compte rendu.**
 
 ### Questions — Partie 7
 
-**Q7.1** — Relevez l'état du volume `data-web` juste après le détachement, puis après la suppression de `web-01`. Qu'est-ce qui montre que le cycle de vie du volume est indépendant de celui de l'instance ? Même question pour l'IP flottante.
 
-**Q7.2** — Que contient `/data/proof.txt` ? Comparez avec le résultat de `hostname`. Que prouve cette comparaison ?
+**Q7.1** — Que contient `/data/proof.txt` ? Comparez avec le résultat de `hostname`. Que prouve cette comparaison ?
 
-**Q7.3** — Reprenez votre réponse à Q6.4. Qu'est-ce qui a été perdu avec `web-01`, et comment l'a-t-on reconstruit ? Qu'est-ce qui a été conservé, et grâce à quoi ?
+**Q7.2** — Reprenez votre réponse à Q6.4. Qu'est-ce qui a été perdu avec `web-01`, et comment l'a-t-on reconstruit ? Qu'est-ce qui a été conservé, et grâce à quoi ?
 
-**Q7.4** — Le script cloud-init ajoute la ligne `fstab` et configure nginx **avant** que le volume soit attaché. Pourquoi est-ce possible sans erreur ? (Pensez à l'option `nofail` et à la manière dont nginx lit les fichiers.)
+**Q7.3** — Le script cloud-init ajoute la ligne `fstab` et configure nginx **avant** que le volume soit attaché. Pourquoi est-ce possible sans erreur ? 
 
-**Q7.6** — Pourquoi SSH a-t-il signalé un changement de clé d'hôte alors que l'adresse IP était la même ? Dans quel cas ce message devrait-il au contraire vous alerter ?
 
 ---
 
@@ -755,13 +738,13 @@ Enfin, détachez le volume restauré dans Horizon (**Manage Attachments → Deta
 
 ### Questions — Partie 8
 
-**Q8.1** — Pourquoi démonter `/data` avant de créer les copies ? Pourquoi Horizon impose-t-il l'option **Force** pour le snapshot d'un volume attaché ?
+**Q8.1** — Pourquoi démonter `/data` avant de créer les copies ? 
 
-**Q8.2** — D'après vos observations en 8.2, où est stocké le snapshot ? Où est stockée la sauvegarde ? Qui a créé le conteneur `volumebackups`, et pourquoi le volume de 2 Gio n'y est-il pas stocké en un seul objet ?
+**Q8.2** — D'après vos observations en 8.2, où est stocké le snapshot ? Où est stockée la sauvegarde ? 
 
 **Q8.3** — Si le serveur qui héberge les volumes Cinder tombait en panne, laquelle des deux copies permettrait de récupérer les données ? Quel est en contrepartie l'inconvénient de la sauvegarde ?
 
-**Q8.4** — Pourquoi a-t-on monté le volume restauré avec `/dev/vdc` et non avec `LABEL=data` ? (Que contient exactement une copie de volume ?)
+**Q8.4** — Pourquoi a-t-on monté le volume restauré avec `/dev/vdc` et non avec `LABEL=data` ? 
 
 ---
 
@@ -769,13 +752,16 @@ Enfin, détachez le volume restauré dans Horizon (**Manage Attachments → Deta
 
 Objectif : supprimer toutes les ressources du lab, pour repartir d'un environnement propre au lab suivant.
 
-Sur l'EC2 :
+Quittez l'instance si vous y êtes encore connecté (`exit`), puis, sur l'EC2, récupérez le script de nettoyage et lancez-le :
 
 ```bash
-cd ~/Cloud-Native/lab04        # ou le dossier où se trouve le script
-chmod +x lab04-clean.sh
+cd ~
+wget -O lab04-clean.sh https://raw.githubusercontent.com/maymounabensaid/cloud-native-infra-labs/main/lab04/lab04-clean.sh
+chmod +x lab04-clean.sh       # rend le script exécutable
 ./lab04-clean.sh
 ```
+
+> Si vous avez déjà cloné le dépôt du cours sur l'EC2, mettez-le à jour (`git pull`) et lancez directement le script depuis le dossier `lab04`.
 
 Vérifiez que tout a disparu :
 
