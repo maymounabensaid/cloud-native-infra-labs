@@ -246,20 +246,6 @@ ssh -o ConnectTimeout=5 -i ~/.ssh/lab05 cirros@$FIP_FRONT
 
 > **Question Q5.1** — Le ping et le SSH fonctionnent-ils ? Exécutez `openstack security group rule list default` : quelles règles contient le groupe `default`, et pourquoi vous bloquent-elles ? (Ne corrigez rien pour l'instant : c'est l'objet de la Partie 6.)
 
-> **Question Q5.2** — Quelle adresse IP `vm-front` a-t-elle reçue (`openstack server list`) ? Est-elle dans l'allocation pool ? Pourquoi n'est-ce pas `10.10.10.100` ?
->
-> Vérifiez depuis la console de l'instance (Horizon → *Instances* → `vm-front` → onglet *Console*, login `cirros` / `gocubsgo`) :
->
-> ```bash
-> ip a
-> ip route
-> cat /etc/resolv.conf
-> ```
->
-> Comparez avec les valeurs de `subnet-front` (Partie 2) : adresse, passerelle, DNS. Qui les a fournies à l'instance ? Voyez-vous l'IP flottante dans la sortie de `ip a` ? Pourquoi ?
-
-> **Question Q5.3** — Depuis la console de `vm-front`, lancez `ping -c 3 10.20.20.10`. Cela fonctionne-t-il ? Pourquoi, sachant que les deux instances n'ont que le groupe `default` ? Par quel équipement passent les paquets ?
-
 ---
 ## Partie 6 — Créer et attacher les groupes de sécurité
 
