@@ -14,13 +14,6 @@
 - [Partie 9 — Nettoyage](#partie-9--nettoyage)
 
 ---
-
-## Avant de commencer
-
-1. Connectez-vous à votre instance EC2 avec `ssh devstack`. Si ce n'est pas encore configuré sur votre machine, suivez [common/ssh-setup.md](../common/ssh-setup.md).
-2. Si votre instance EC2 a été redémarrée depuis la dernière séance, remettez DevStack en état : [common/restore-after-reboot.md](../common/restore-after-reboot.md), étapes 1 à 4.
-3. Vérifiez qu'aucune ressource des labs précédents ne subsiste : même fichier, étape 5.
-
 ## Scénario
 
 Vous devez déployer un petit site web sur une instance OpenStack, avec deux exigences :
@@ -747,21 +740,18 @@ Enfin, détachez le volume restauré dans Horizon (**Manage Attachments → Deta
 **Q8.4** — Pourquoi a-t-on monté le volume restauré avec `/dev/vdc` et non avec `LABEL=data` ? 
 
 ---
-
 ## Partie 9 — Nettoyage
 
-Objectif : supprimer toutes les ressources du lab, pour repartir d'un environnement propre au lab suivant.
-
-Quittez l'instance si vous y êtes encore connecté (`exit`), puis, sur l'EC2, récupérez le script de nettoyage et lancez-le :
+Chaque lab doit laisser le projet propre pour que le lab suivant puisse repartir de zéro. Téléchargez et exécutez le script de nettoyage :
 
 ```bash
 cd ~
-wget -O lab04-clean.sh https://raw.githubusercontent.com/maymounabensaid/cloud-native-infra-labs/main/lab04/lab04-clean.sh
-chmod +x lab04-clean.sh       # rend le script exécutable
-./lab04-clean.sh
+wget -O clean_lab04.sh https://raw.githubusercontent.com/maymounabensaid/cloud-native-infra-labs/main/lab05/clean_lab04.sh
+chmod +x clean_lab04.sh       # rend le script exécutable
+./clean_lab04.sh
 ```
 
-> Si vous avez déjà cloné le dépôt du cours sur l'EC2, mettez-le à jour (`git pull`) et lancez directement le script depuis le dossier `lab04`.
+Le script affiche à la fin les ressources restantes du projet. Seuls les objets créés par DevStack (`public`, `private`, `shared`, `router1`, groupe `default`) doivent subsister.
 
 Vérifiez que tout a disparu :
 
