@@ -746,7 +746,7 @@ Chaque lab doit laisser le projet propre pour que le lab suivant puisse repartir
 
 ```bash
 cd ~
-wget -O clean_lab04.sh https://raw.githubusercontent.com/maymounabensaid/cloud-native-infra-labs/main/lab05/clean_lab04.sh
+wget -O clean_lab04.sh https://raw.githubusercontent.com/maymounabensaid/cloud-native-infra-labs/main/lab04/clean_lab04.sh
 chmod +x clean_lab04.sh       # rend le script exécutable
 ./clean_lab04.sh
 ```

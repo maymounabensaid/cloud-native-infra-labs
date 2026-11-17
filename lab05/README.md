@@ -86,7 +86,6 @@ openstack router list
 
 > **Question Q1.2** — `public` est-il un réseau *provider* ou un réseau *tenant* ? Pouvez-vous, avec le compte `demo`, créer un réseau de ce type ? Pourquoi ?
 
-> **Question Q1.3** — DevStack a aussi créé un réseau `private`, un réseau `shared` et un routeur `router1`. Ces objets ne seront **pas** utilisés dans ce lab : ne les modifiez pas.
 
 ---
 
@@ -118,10 +117,6 @@ openstack port list --network net-front --long
 
 > **Question Q2.1** — Quel est le rôle de l'*allocation pool* ? Quelles adresses du sous-réseau ne seront jamais attribuées **automatiquement** par Neutron à une instance ?
 
-> **Question Q2.2** — Que se passerait-il pour les instances démarrées sur ce sous-réseau s'il avait été créé avec `--no-dhcp` ?
-
-> **Question Q2.3** — Un port existe déjà sur `net-front` alors qu'aucune instance n'est lancée. Relevez son adresse IP et son `device_owner`. D'où vient cette adresse ? (Ce port technique, de type `network:distributed`, sert au service de métadonnées des instances. Son statut `DOWN` est normal.)
-
 ---
 
 ## Partie 3 — Donner un accès externe au réseau exposé via un routeur
@@ -143,9 +138,7 @@ openstack port list --router router-lab05 --long
 
 > **Question Q3.1** — Quelle adresse IPv4 le routeur a-t-il sur `public` ? Laquelle sur `subnet-front` ? Pourquoi cette dernière est-elle égale à la passerelle du sous-réseau ?
 
-> **Question Q3.2** — Quel est le `device_owner` du port affiché par `openstack port list --router` ? Le port du routeur sur `public` n'apparaît pas : pourquoi le projet `demo` ne le voit-il pas ?
-
-> **Question Q3.3** — Dans `external_gateway_info`, repérez `enable_snat`. Que permet le SNAT aux instances de `net-front` ? Quelqu'un de l'extérieur peut-il joindre une de ces instances grâce au seul SNAT ?
+> **Question Q3.2** — Dans `external_gateway_info`, repérez `enable_snat`. Que permet le SNAT aux instances de `net-front` ? Quelqu'un de l'extérieur peut-il joindre une de ces instances grâce au seul SNAT ?
 
 ---
 
@@ -399,20 +392,18 @@ Complétez le tableau (Oui / Non) et expliquez chaque ligne :
 > openstack floating ip delete $FIP_PRIV
 > ```
 
----
-
-## Partie 7 — Observer la topologie
-
-Dans Horizon : **Projet → Réseau → Topologie réseau**. Comparez avec le schéma de la section 1 et faites une capture de votre topologie pour votre compte rendu.
 
 ---
 
-## Partie 8 — Nettoyage
+## Partie 7— Nettoyage
 
 Chaque lab doit laisser le projet propre pour que le lab suivant puisse repartir de zéro. Exécutez le script fourni :
 
 ```bash
-bash clean_lab05.sh
+cd ~
+wget -O purge_all.sh https://raw.githubusercontent.com/maymounabensaid/cloud-native-infra-labs/main/lab05/purge_all.sh
+chmod +x purge_all.sh    
+./purge_all.sh
 ```
 
 Vérifiez qu'il ne reste rien de ce lab :
