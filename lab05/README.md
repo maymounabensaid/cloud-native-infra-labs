@@ -394,19 +394,19 @@ Complétez le tableau (Oui / Non) et expliquez chaque ligne :
 
 
 ---
+## Partie 7 — Nettoyage
 
-## Partie 7— Nettoyage
-
-Chaque lab doit laisser le projet propre pour que le lab suivant puisse repartir de zéro. Exécutez le script fourni :
+Chaque lab doit laisser le projet propre pour que le lab suivant puisse repartir de zéro. Téléchargez le script fourni, vérifiez ce qu'il va supprimer, puis lancez la suppression :
 
 ```bash
 cd ~
 wget -O purge_all.sh https://raw.githubusercontent.com/maymounabensaid/cloud-native-infra-labs/main/lab05/purge_all.sh
-chmod +x purge_all.sh    
-./purge_all.sh
+chmod +x purge_all.sh
+./purge_all.sh          # simulation : affiche ce qui sera supprimé
+./purge_all.sh --yes    # suppression réelle
 ```
 
-Vérifiez qu'il ne reste rien de ce lab :
+Le script affiche à la fin les ressources restantes. Seuls les objets créés par DevStack (`public`, `private`, `shared`, `router1`, groupe `default`) doivent subsister.
 
 ```bash
 openstack server list
@@ -417,7 +417,6 @@ openstack security group list
 openstack keypair list
 ```
 
-Seuls les objets créés par DevStack (`public`, `private`, `shared`, `router1`, groupe `default`) doivent subsister.
 
 ---
 
