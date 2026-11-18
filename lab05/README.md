@@ -6,11 +6,10 @@
 1. Créer des réseaux self-service (tenant) et leurs sous-réseaux, avec un plan d'adressage maîtrisé.
 2. Donner un accès externe au réseau exposé grâce à un routeur connecté au réseau `public`.
 3. Relier un réseau privé au même routeur, sans lui attribuer d'IP flottante.
-4. Créer des groupes de sécurité, les attacher aux instances et aux ports, et appliquer le moindre privilège pour que les instances privées ne soient joignables que depuis le bastion.
+4. Créer des groupes de sécurité, les attacher aux instances et aux ports, et appliquer le moindre privilège pour que l'instance privée ne soit joignable que depuis le bastion.
 5. Administrer une instance privée par rebond SSH via une instance bastion.
 
 ---
-
 ## 1. Scénario du lab
 
 Vous allez construire, dans le projet `demo`, une architecture à deux réseaux :
@@ -43,7 +42,7 @@ Les communications autorisées dans cette architecture sont les suivantes :
 | Instances | `vm-front`, `vm-private` | CirrOS, gabarit `m1.tiny` |
 | Paire de clés | `lab05-key` | fichier `~/.ssh/lab05` |
 
-### Plan d'adressage d'un sous-réseau
+### Plan d'adressage choisi pour ce lab
 
 | Adresses | Usage |
 |---|---|
@@ -54,8 +53,10 @@ Les communications autorisées dans cette architecture sont les suivantes :
 | `.201` → `.254` | réservées |
 | `.255` | adresse de diffusion |
 
----
 
+> **Remarque.** Ces bornes sont un choix de conception, fixé avec `--allocation-pool`. Sans cette option, Neutron utilise par défaut toutes les adresses de `.2` à `.254` (pour une passerelle en `.1`). Réserver une partie du sous-réseau hors pool permet d'attribuer des IP fixes sans conflit.
+
+---
 ## 2. Avant de commencer
 
 Si votre instance EC2 a été arrêtée depuis la dernière séance, exécutez le script `restore_after_reboot.sh` du dossier `common/` du dépôt du cours.
@@ -82,9 +83,9 @@ openstack subnet list
 openstack router list
 ```
 
-> **Question Q1.1** — Quel réseau est marqué comme *external* ? Quelle est la plage de son sous-réseau **IPv4** ? (Il possède aussi un sous-réseau IPv6, que nous n'utiliserons pas.)
+> **Question Q1.1** — Quel réseau est marqué comme *external* ? Quelle est la plage de son sous-réseau **IPv4** ? 
 
-> **Question Q1.2** — `public` est-il un réseau *provider* ou un réseau *tenant* ? Pouvez-vous, avec le compte `demo`, créer un réseau de ce type ? Pourquoi ?
+> **Question Q1.2** — `public` est-il un réseau *provider* ou un réseau *tenant* ? Pouvez-vous, avec le compte `demo`, créer un réseau de ce type ? 
 
 
 ---
@@ -115,7 +116,8 @@ openstack subnet show subnet-front \
 openstack port list --network net-front --long
 ```
 
-> **Question Q2.1** — Quel est le rôle de l'*allocation pool* ? Quelles adresses du sous-réseau ne seront jamais attribuées **automatiquement** par Neutron à une instance ?
+> **Question Q2.1** — Quel est le rôle de l'*allocation pool* ? Quelles adresses du sous-réseau `subnet-front` ne seront jamais attribuées **automatiquement** par Neutron à une instance ?
+
 
 ---
 
@@ -160,26 +162,16 @@ openstack subnet create subnet-private \
 openstack router add subnet router-lab05 subnet-private
 ```
 
-On veut que `vm-private` ait toujours la même adresse : on crée donc son **port** à l'avance, avec une adresse choisie hors de l'allocation pool.
+Vérifiez les interfaces routeur :
 
 ```bash
-openstack port create port-private \
-  --network net-private \
-  --fixed-ip subnet=subnet-private,ip-address=10.20.20.10
-```
-
-Vérifiez :
-
-```bash
-openstack port show port-private -c fixed_ips -c status -c device_owner -c security_group_ids
 openstack port list --router router-lab05 --long
 ```
 
-> **Question Q4.1** — Deux instances sur des réseaux différents ne peuvent communiquer que via un routeur. Quel objet permet maintenant le trafic entre `net-front` et `net-private` ? Combien d'interfaces internes `router-lab05` possède-t-il désormais ?
 
-> **Question Q4.2** — Pourquoi est-il utile de créer le port avant l'instance ? Pourquoi a-t-on choisi `10.20.20.10`, hors de l'allocation pool ? Quel est le statut du port, et son `device_owner` est-il renseigné ? Pourquoi ?
+> **Question Q4.1** — Deux instances sur des réseaux différents ne peuvent communiquer que via un routeur. Quel objet permet maintenant le trafic entre `net-front` et `net-private` ? Combien d'interfaces internes `router-lab05` possède-t-il ?
 
-> **Question Q4.3** — `vm-private` pourra-t-elle joindre l'extérieur (sortant) ? L'extérieur pourra-t-il joindre `vm-private` (entrant) ? Justifiez.
+> **Question Q4.2** — `vm-private` pourra-t-elle joindre l'extérieur (sortant) ? L'extérieur pourra-t-il joindre `vm-private` (entrant) ? Justifiez.
 
 ---
 
@@ -194,41 +186,82 @@ ssh-keygen -t rsa -b 2048 -f ~/.ssh/lab05 -N ""
 openstack keypair create --public-key ~/.ssh/lab05.pub lab05-key
 ```
 
-### 5.2 Instances
+### 5.2 Port à adresse fixe pour `vm-private`
 
-| Instance | Image | Gabarit | Raccordement | Clé |
-|---|---|---|---|---|
-| `vm-front` | CirrOS | `m1.tiny` | réseau `net-front` (adresse choisie par Neutron) | `lab05-key` |
-| `vm-private` | CirrOS | `m1.tiny` | port `port-private` (10.20.20.10) | `lab05-key` |
+- Un **port** Neutron est le point de branchement d'un équipement sur un réseau. Il porte une adresse MAC, une ou plusieurs adresses IP du sous-réseau, et les groupes de sécurité qui filtrent son trafic. Chaque interface d'une instance, et chaque interface d'un routeur, est un port.
+- Le port d'une instance est créé automatiquement au lancement (`--network`) et Neutron choisit son IP dans le pool. 
+- Ici, on veut que `vm-private` ait toujours la même adresse : on crée donc son port **à l'avance**, avec une adresse choisie hors de l'allocation pool, puis on le donne à l'instance (`--port`).
+
+
+```bash 
+openstack port create port-private \
+  --network net-private \
+  --fixed-ip subnet=subnet-private,ip-address=10.20.20.10
+```
+
+- Vérifiez les champs du port après création :
+```bash 
+openstack port show port-private -c fixed_ips -c status -c device_owner -c device_id 
+```
+- Résultat attendu :
+```
++--------------+--------------------------------------------------------------+
+| Field        | Value                                                        |
++--------------+--------------------------------------------------------------+
+| device_id    |                                                              |
+| device_owner |                                                              |
+| fixed_ips    | ip_address='10.20.20.10', subnet_id='<id-subnet-private>'    |
+| status       | DOWN                                                         |
++--------------+--------------------------------------------------------------+
+```
+### 5.3 Instances
+
+| Instance     | Image  | Gabarit   | Raccordement                                     | Clé         |
+| ------------ | ------ | --------- | ------------------------------------------------ | ----------- |
+| `vm-front`   | CirrOS | `m1.tiny` | réseau `net-front` (adresse choisie par Neutron) | `lab05-key` |
+| `vm-private` | CirrOS | `m1.tiny` | port `port-private` (10.20.20.10)                | `lab05-key` |
+|              |        |           |                                                  |             |
+-  Cherchez le nom de l’image CirrOS installée par DevStack et  stockez le dans la variable `IMAGE`:
 
 ```bash
-IMAGE=$(openstack image list -f value -c Name | grep -m1 cirros)
+IMAGE=$(openstack image list --public -f value -c Name | grep cirros)
 echo $IMAGE
+```
 
+- Créez l'instance `vm-front` ( en utilisant --network) :
+```bash
 openstack server create vm-front \
   --image "$IMAGE" --flavor m1.tiny \
   --network net-front --key-name lab05-key --wait
+```
 
+- Créez l'instance `vm-private` (en utilisant --port)
+
+```bash
 openstack server create vm-private \
   --image "$IMAGE" --flavor m1.tiny \
   --port port-private --key-name lab05-key --wait
-
-openstack server list
 ```
 
-### 5.3 IP flottante pour le bastion
+- Vérifiez les deux instances :
+```bash
+openstack server list
+```
+### 5.4 IP flottante pour le bastion
 
 Une **IP flottante** est une adresse du réseau `public` associée à une instance. Le routeur traduit cette adresse vers l'adresse privée de l'instance.
 
+- Allouez une adresse IP flottante et associez la à la `vm-front`
 ```bash
 FIP_FRONT=$(openstack floating ip create public --description lab05 -f value -c floating_ip_address)
 echo $FIP_FRONT
+```
+
+```bash
 openstack server add floating ip vm-front $FIP_FRONT
 ```
 
-> **Astuce.** La variable `FIP_FRONT` est perdue si vous fermez votre session SSH. Pour la retrouver : `openstack floating ip list`, puis `FIP_FRONT=<adresse>`.
-
-### 5.4 Premiers tests
+### 5.5 Premiers tests
 
 Depuis l'hôte EC2 :
 
@@ -237,7 +270,7 @@ ping -c 3 -W 2 $FIP_FRONT
 ssh -o ConnectTimeout=5 -i ~/.ssh/lab05 cirros@$FIP_FRONT
 ```
 
-> **Question Q5.1** — Le ping et le SSH fonctionnent-ils ? Exécutez `openstack security group rule list default` : quelles règles contient le groupe `default`, et pourquoi vous bloquent-elles ? (Ne corrigez rien pour l'instant : c'est l'objet de la Partie 6.)
+> **Question Q5.1** — Le ping et le SSH fonctionnent-ils ? Exécutez `openstack security group rule list default` : quelles règles contient le groupe `default`, et pourquoi vous bloquent-elles ? 
 
 ---
 ## Partie 6 — Créer et attacher les groupes de sécurité
@@ -250,27 +283,37 @@ Un **groupe de sécurité** est un pare-feu appliqué à chaque port :
 
 ### 6.1 Groupe de sécurité du réseau exposé
 
-`vm-front` joue le rôle de **bastion et serveur web** : elle accepte ICMP, SSH et HTTP depuis n'importe où.
+- `vm-front` joue le rôle de **bastion et serveur web** : elle accepte ICMP, SSH et HTTP depuis n'importe où.
 
 **sg-front — règles entrantes (Ingress)**
 
-| Type | Protocole | Port | Source |
-|---|---|---|---|
-| ICMP | ICMP | — | 0.0.0.0/0 |
-| SSH | TCP | 22 | 0.0.0.0/0 |
-| HTTP | TCP | 80 | 0.0.0.0/0 |
+| Type | Protocole | Port | Source    |
+| ---- | --------- | ---- | --------- |
+| ICMP | ICMP      | —    | 0.0.0.0/0 |
+| SSH  | TCP       | 22   | 0.0.0.0/0 |
+| HTTP | TCP       | 80   | 0.0.0.0/0 |
+
+- Créez le groupe de sécurité `sg-front` :
 
 ```bash
 openstack security group create sg-front --description "Front: public access"
+```
 
+- Ajoutez les règles icmp, ssh et http :
+
+```bash
 openstack security group rule create sg-front --ingress --protocol icmp --remote-ip 0.0.0.0/0
 openstack security group rule create sg-front --ingress --protocol tcp --dst-port 22 --remote-ip 0.0.0.0/0
 openstack security group rule create sg-front --ingress --protocol tcp --dst-port 80 --remote-ip 0.0.0.0/0
+```
 
+- Lister les règles du groupe de sécurité `sg-front`
+
+```bash
 openstack security group rule list sg-front
 ```
 
-> **Question** — Justifiez les règles entrantes de `sg-front`. Laquelle pourriez-vous restreindre dans un environnement de production, et comment ?
+> **Question Q6.1** — Justifiez les règles entrantes de `sg-front`. Laquelle pourriez-vous restreindre dans un environnement de production, et comment ?
 
 ### 6.2 Groupe de sécurité du réseau privé
 
@@ -282,19 +325,29 @@ openstack security group rule list sg-front
 |---|---|---|---|
 | SSH | TCP | 22 | groupe `sg-front` (*remote group*) |
 | ICMP | ICMP | — | 10.10.10.0/24 (*remote IP*) |
+- Créez le groupe de sécurité `sg-private :
 
 ```bash
 openstack security group create sg-private --description "Private: access from front only"
+```
 
+- Ajoutez les règles de sécurité : 
+```bash
 openstack security group rule create sg-private --ingress --protocol tcp --dst-port 22 --remote-group sg-front
 openstack security group rule create sg-private --ingress --protocol icmp --remote-ip 10.10.10.0/24
+```
 
+- Lister les règles du groupe de sécurité `sg-private`
+
+```bash
 openstack security group rule list sg-private
 ```
 
-> **Question Q6.1** — Quelles règles existent dans `sg-front` et `sg-private` que vous n'avez **pas** créées ? Que permettent-elles ?
 
-> **Question Q6.2** — Quelle est la différence entre `--remote-ip 10.10.10.0/24` et `--remote-group sg-front` ? Laquelle est la plus robuste si le réseau exposé reçoit un deuxième sous-réseau, ou si une nouvelle instance y est ajoutée ?
+> **Question Q6.2** — Quelles règles existent dans `sg-front` et `sg-private` que vous n'avez **pas** créées ? Que permettent-elles ?
+
+> **Question Q6.3** — Quelle est la différence entre `--remote-ip 10.10.10.0/24` et `--remote-group sg-front` ? Une nouvelle instance `vm-test` est lancée sur `net-front` avec le seul groupe `default` : peut-elle joindre `vm-private` en ICMP ? en SSH ? Pourquoi ?
+
 
 ### 6.3 Attacher les groupes de sécurité
 
@@ -319,79 +372,123 @@ openstack port show port-private -c security_group_ids -c fixed_ips
 
 **Récapitulatif**
 
-| Instance | Port | Groupe de sécurité | IP flottante |
-|---|---|---|---|
-| `vm-front` | port créé par Nova sur `net-front` | `sg-front` | oui |
-| `vm-private` | `port-private` (10.20.20.10) | `sg-private` | non |
-
+| Instance     | Port                                                                               | Groupe de sécurité | IP flottante |
+| ------------ | ---------------------------------------------------------------------------------- | ------------------ | ------------ |
+| `vm-front`   | port créé automatiquement sur `net-front` (Nova le demande à Neutron au lancement) | `sg-front`         | oui          |
+| `vm-private` | `port-private` (10.20.20.10)                                                       | `sg-private`       | non          |
 ### 6.4 Tester la matrice d'accès
 
-Depuis l'hôte EC2, testez l'accès au bastion :
+- **a). Depuis l'hôte EC2 — accès au bastion**
+
+```bash 
+ping -c 3 $FIP_FRONT 
+ssh -i ~/.ssh/lab05 cirros@$FIP_FRONT 
+``` 
+
+> À la première connexion, SSH demande `Are you sure you want to continue connecting (yes/no)?` : répondez `yes`. SSH enregistre alors l'**empreinte** de la machine (sa clé d'hôte) dans `~/.ssh/known_hosts`, pour la reconnaître aux connexions suivantes. 
+
+
+> **En cas d'erreur `REMOTE HOST IDENTIFICATION HAS CHANGED!`** — Les IP flottantes sont réutilisées d'un lab à l'autre : cette adresse a sans doute déjà servi à une autre VM, dont SSH a gardé l'empreinte. Comme la clé ne correspond plus, SSH bloque la connexion par sécurité. Ici, on sait pourquoi elle a changé : supprimez l'ancienne empreinte, puis reconnectez-vous. 
+
+```bash 
+ssh-keygen -R $FIP_FRONT    
+ssh -i ~/.ssh/lab05 cirros@$FIP_FRONT  
+``` 
+
+Une fois connecté à `vm-front`, testez l'accès vers `vm-private` :
 
 ```bash
-ping -c 3 $FIP_FRONT
-ssh -i ~/.ssh/lab05 cirros@$FIP_FRONT
+ping -c 3 10.20.20.10                    
 ```
 
-Joignez ensuite `vm-private` **en passant par** `vm-front`, utilisée comme bastion. L'agent SSH garde votre clé en mémoire : elle n'est jamais copiée sur le bastion.
+**b). Depuis l'hôte EC2 — accès direct à `vm-private`**
 
 ```bash
-eval $(ssh-agent)
-ssh-add ~/.ssh/lab05
-ssh -J cirros@$FIP_FRONT cirros@10.20.20.10
+ping -c 3 -W 2 10.20.20.10               
 ```
+
+**c). Depuis l'hôte EC2 — rebond (_ProxyJump_) via le bastion vers `vm-private`**
+
+Joignez maintenant `vm-private` **en passant par** `vm-front`, utilisée comme bastion : c'est un **rebond** (*ProxyJump*).
+
+![Rebond SSH via le bastion](images/ssh-rebond.png)
+
+```bash
+eval $(ssh-agent)          # démarre un agent SSH sur l'hôte EC2
+ssh-add ~/.ssh/lab05       # charge la clé privée dans la mémoire de l'agent
+ssh  -J cirros@$FIP_FRONT cirros@10.20.20.10  
+```
+
+> **Où est la clé ?** Uniquement dans la mémoire de l'agent, **sur l'hôte EC2**. Votre client SSH ouvre une connexion vers `vm-front`, puis, à travers elle, une seconde connexion chiffrée directement vers `vm-private`. Il s'authentifie auprès des deux machines avec la clé de l'agent : **la clé n'est jamais copiée** sur le bastion, qui ne fait que relayer le trafic.
+>
+> L'agent n'est visible que depuis le terminal où vous l'avez lancé. Il continue de tourner après la fermeture du terminal : à la fin du lab, arrêtez-le avec `eval $(ssh-agent -k)`.
 
 > Si le rebond échoue, connectez-vous d'abord à `vm-front`, puis lancez `ssh cirros@10.20.20.10` depuis celle-ci (mot de passe `gocubsgo`).
 
-Depuis `vm-private`, testez l'accès sortant :
+**Depuis `vm-private`** (connecté par rebond) — remplacez `<IP-vm-front>` par l'adresse privée de `vm-front` (`openstack server list`, sur l'hôte) :
 
 ```bash
-ping -c 3 10.10.10.1     # passerelle du réseau exposé (routeur)
-ping -c 3 172.24.4.1     # côté réseau externe (hôte EC2, br-ex)
+ping -c 3 10.10.10.1       # passerelle du réseau exposé (routeur)
+ping -c 3 172.24.4.1       #  côté réseau externe (hôte EC2, br-ex)
+ping -c 3 <IP-vm-front>    # 
 ```
 
 Complétez le tableau (Oui / Non) et expliquez chaque ligne :
 
-| # | Depuis | Vers | Protocole | Résultat | Règle ou objet responsable |
-|---|---|---|---|---|---|
-| 1 | Hôte EC2 | `vm-front` (IP flottante) | ICMP | | |
-| 2 | Hôte EC2 | `vm-front` (IP flottante) | SSH | | |
-| 3 | `vm-front` | `vm-private` | ICMP | | |
-| 4 | `vm-front` | `vm-private` | SSH | | |
-| 5 | Hôte EC2 | `vm-private` (10.20.20.10) | ICMP | | |
-| 6 | `vm-private` | 172.24.4.1 | ICMP | | |
-| 7 | `vm-private` | `vm-front` | ICMP | | |
+| #   | Depuis       | Vers                       | Protocole | Résultat | Règle ou objet responsable |
+| --- | ------------ | -------------------------- | --------- | -------- | -------------------------- |
+| 1   | Hôte EC2     | `vm-front` (IP flottante)  | ICMP      |          |                            |
+| 2   | Hôte EC2     | `vm-front` (IP flottante)  | SSH       |          |                            |
+| 3   | `vm-front`   | `vm-private`               | ICMP      |          |                            |
+| 4   | `vm-front`   | `vm-private`               | SSH       |          |                            |
+| 5   | Hôte EC2     | `vm-private` (10.20.20.10) | ICMP      |          |                            |
+| 6   | `vm-private` | 172.24.4.1                 | ICMP      |          |                            |
+| 7   | `vm-private` | `vm-front` (IP privée)     | ICMP      |          |                            |
 
-> **Question Q6.3** — Pensez au **trafic de retour** des lignes 4 et 6. À la ligne 6, aucune règle entrante de `sg-private` n'autorise les réponses venant de 172.24.4.1, et pourtant elles arrivent. Les groupes de sécurité sont *stateful* : qu'est-ce que cela signifie ?
-
-> **Question Q6.4** — Proposez la règle à ajouter (avec ses options) qui permettrait à l'hôte EC2 de se connecter en SSH **directement** à `vm-private`, uniquement depuis `172.24.4.1`. Pourquoi préfère-t-on en général l'approche bastion ?
+> **Question Q6.4** — Pensez au **trafic de retour** des lignes 4 et 6. À la ligne 6, aucune règle entrante de `sg-private` n'autorise les réponses venant de 172.24.4.1, et pourtant elles arrivent. Les groupes de sécurité sont *stateful* : qu'est-ce que cela signifie ?
 
 ### 6.5 Pour aller plus loin (facultatif)
 
-> **Question Q6.5 — Modification à chaud (HTTP).** Sur `vm-front`, démarrez un serveur web minimal, puis testez-le depuis l'hôte EC2 avec `curl http://$FIP_FRONT` :
+> **Question Q6.5 — Modification à chaud (HTTP).** Sur `vm-front`, démarrez un serveur web minimal, puis testez-le depuis l'hôte EC2.
 >
-> ```bash
-> while true; do echo -e "HTTP/1.0 200 OK\r\n\r\nHello from vm-front" | sudo nc -l -p 80; done &
-> ```
->
-> Supprimez la règle du port 80 de `sg-front` (`openstack security group rule list sg-front`, puis `openstack security group rule delete <ID>`) et testez à nouveau. Faut-il redémarrer l'instance pour que le changement s'applique ?
+```bash
+while true; do echo -e "HTTP/1.0 200 OK\r\n\r\nHello from vm-front" | sudo nc -l -p 80; done &
+```
+
+- Testez l'accès au serveur web depuis EC2:
+```bash
+curl http://$FIP_FRONT
+```
+
+- Supprimez la règle du port 80 de `sg-front` 
+
+```bash
+openstack security group rule list sg-front
+openstack security group rule delete <ID>
+```
+
+- Testez à nouveau. Faut-il redémarrer l'instance pour que le changement s'applique ?
 
 > **Question Q6.6 — Moindre privilège.** Allouez une deuxième IP flottante et associez-la à `vm-private` :
->
-> ```bash
-> FIP_PRIV=$(openstack floating ip create public --description lab05 -f value -c floating_ip_address)
-> openstack server add floating ip vm-private $FIP_PRIV
-> ping -c 3 -W 2 $FIP_PRIV
-> ssh -o ConnectTimeout=5 -i ~/.ssh/lab05 cirros@$FIP_PRIV
-> ```
->
-> Cela fonctionne-t-il ? Qu'est-ce qui protège `vm-private` alors qu'elle est maintenant « exposée » ? Retirez ensuite l'IP flottante :
->
-> ```bash
-> openstack server remove floating ip vm-private $FIP_PRIV
-> openstack floating ip delete $FIP_PRIV
-> ```
 
+```bash
+FIP_PRIV=$(openstack floating ip create public --description lab05 -f value -c floating_ip_address)
+openstack server add floating ip vm-private $FIP_PRIV
+```
+
+- Depuis l'hôte EC2, testez l'accès en `icmp` et `ssh` :
+
+```bash
+ping -c 3 -W 2 $FIP_PRIV
+ssh -o ConnectTimeout=5 -i ~/.ssh/lab05 cirros@$FIP_PRIV
+```
+
+> Cela fonctionne-t-il ? Qu'est-ce qui protège `vm-private` alors qu'elle est maintenant « exposée » ? Retirez ensuite l'IP flottante :
+
+```bash
+openstack server remove floating ip vm-private $FIP_PRIV
+openstack floating ip delete $FIP_PRIV
+```
 
 ---
 ## Partie 7 — Nettoyage
@@ -404,7 +501,10 @@ wget -O purge_all.sh https://raw.githubusercontent.com/maymounabensaid/cloud-nat
 chmod +x purge_all.sh
 ./purge_all.sh          # simulation : affiche ce qui sera supprimé
 ./purge_all.sh --yes    # suppression réelle
+eval $(ssh-agent -k)    # arrête l'agent SSH lancé en 6.4
 ```
+
+Le script affiche à la fin les ressources restantes. Seuls les objets créés par DevStack (`public`, `private`, `shared`, `router1`, groupe `default`) doivent subsister.
 
 Le script affiche à la fin les ressources restantes. Seuls les objets créés par DevStack (`public`, `private`, `shared`, `router1`, groupe `default`) doivent subsister.
 
