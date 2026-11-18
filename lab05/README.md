@@ -506,8 +506,6 @@ eval $(ssh-agent -k)    # arrête l'agent SSH lancé en 6.4
 
 Le script affiche à la fin les ressources restantes. Seuls les objets créés par DevStack (`public`, `private`, `shared`, `router1`, groupe `default`) doivent subsister.
 
-Le script affiche à la fin les ressources restantes. Seuls les objets créés par DevStack (`public`, `private`, `shared`, `router1`, groupe `default`) doivent subsister.
-
 ```bash
 openstack server list
 openstack floating ip list
