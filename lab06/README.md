@@ -227,10 +227,12 @@ tofu init
 
 > **Pourquoi initialiser maintenant ?** `tofu init` ne lit que le bloc `required_providers` : il télécharge le plugin OpenStack, sans tenir compte des ressources. Une fois le projet initialisé, `tofu validate` et `tofu plan` peuvent vérifier chaque fichier au fur et à mesure que vous l'écrivez. Il n'est pas nécessaire de relancer `tofu init` quand vous ajoutez des ressources, seulement si vous changez de provider ou de version.
 
-Affichez le contenu du répertoire, y compris les fichiers cachés :
+Vérification, depuis `~/lab06-opentofu` (les fichiers commençant par un point sont cachés, d'où l'option `-a`) :
 
 ```bash
 ls -a
+find .terraform -type f
+cat .terraform.lock.hcl
 ```
 
 > **Question Q2.2** — Qu'a téléchargé la commande `tofu init`, et dans quel répertoire caché ces fichiers sont-ils stockés ? Quel est le rôle du fichier `.terraform.lock.hcl` ?
