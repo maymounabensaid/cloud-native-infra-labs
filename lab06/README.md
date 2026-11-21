@@ -631,12 +631,11 @@ tofu plan -var 'private_cidr=10.30.30.0/24'
 
 ## Partie 6 — Destruction de l'infrastructure
 
-Au Lab 05, `clean_lab05.sh` supprimait les ressources dans un ordre écrit à la main. Ici, le graphe de dépendances s'en charge :
+Avec la CLI, il fallait supprimer les ressources une à une, dans l'ordre inverse de leur création : instances, IP flottantes, interfaces du routeur, routeur, sous-réseaux, réseaux. Avec OpenTofu, une seule commande suffit : l'ordre est déduit du graphe de dépendances.
 
 ```bash
 tofu destroy
 ```
-
 Vérifiez que le projet `demo` est revenu à son état initial :
 
 ```bash
@@ -647,6 +646,6 @@ openstack --os-cloud demo network list
 openstack --os-cloud demo security group list
 ```
 
-> **Question Q6.1** — Comparez l'ordre de destruction affiché par `tofu destroy` avec celui de `clean_lab05.sh`. Que sait OpenTofu qu'un script ne sait pas ?
 
+> **Question Q6.1** — Dans quel ordre `tofu destroy` a-t-il supprimé les ressources ? Comparez avec l'ordre que vous auriez dû suivre à la main avec la CLI. Comment OpenTofu connaît-il cet ordre ?
 > **Question Q6.2** — Que reste-t-il dans `terraform.tfstate` après le `destroy` ? Pourquoi ce fichier ne doit-il jamais être poussé dans un dépôt Git public ?
