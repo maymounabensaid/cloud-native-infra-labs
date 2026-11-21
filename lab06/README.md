@@ -109,7 +109,7 @@ unset ${!OS_*}
 openstack --os-cloud demo token issue
 ```
 
-* Vérifier qu'il ne reste aucune ressource des labs précédents dans le projet `demo`. Les deux premières commandes ne doivent rien afficher ; la troisième ne doit lister que les réseaux créés par DevStack.
+* Vérifier qu'il ne reste aucune ressource des labs précédents dans le projet `demo` :
 
 ```bash
 openstack --os-cloud demo server list
@@ -117,6 +117,11 @@ openstack --os-cloud demo router list
 openstack --os-cloud demo network list
 ```
 
+Résultat attendu :
+
+- `server list` n'affiche aucune instance ;
+- `router list` n'affiche que `router1`, créé par DevStack à l'installation ;
+- `network list` n'affiche que les réseaux créés par DevStack (`public`, `private`…).
 ### 1.3 Préparer la clé SSH
 
 ```bash
@@ -222,6 +227,12 @@ tofu init
 
 > **Pourquoi initialiser maintenant ?** `tofu init` ne lit que le bloc `required_providers` : il télécharge le plugin OpenStack, sans tenir compte des ressources. Une fois le projet initialisé, `tofu validate` et `tofu plan` peuvent vérifier chaque fichier au fur et à mesure que vous l'écrivez. Il n'est pas nécessaire de relancer `tofu init` quand vous ajoutez des ressources, seulement si vous changez de provider ou de version.
 
+Affichez le contenu du répertoire, y compris les fichiers cachés :
+
+```bash
+ls -a
+```
+
 > **Question Q2.2** — Qu'a téléchargé la commande `tofu init`, et dans quel répertoire caché ces fichiers sont-ils stockés ? Quel est le rôle du fichier `.terraform.lock.hcl` ?
 
 Vérifiez maintenant la configuration :
@@ -230,7 +241,7 @@ Vérifiez maintenant la configuration :
 tofu validate
 ```
 
-> **Question Q2.3** — `tofu init` a réussi, mais `tofu validate` signale une erreur. Laquelle, et pourquoi ? Que révèle-t-elle sur les liens entre les fichiers `.tf` ?
+> **Question Q2.3** — `tofu validate` répond `Success!`, alors que `providers.tf` utilise `var.cloud_name` et qu'aucun fichier ne déclare encore cette variable. Qu'est-ce que `tofu validate` vérifie, et qu'est-ce qu'il ne vérifie pas ? Pourquoi ne peut-on pas encore lancer de déploiement ?
 
 ### 2.4 Déclarer les variables (`variables.tf`)
 
