@@ -1,1 +1,7 @@
+# Debriefs enseignant
 Debrief-*.md
+
+# OpenTofu
+.terraform/
+*.tfstate
+*.tfstate.*
