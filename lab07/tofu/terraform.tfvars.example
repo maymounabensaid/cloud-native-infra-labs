@@ -1,0 +1,5 @@
+# Copier en terraform.tfvars et adapter si besoin
+cloud           = "demo"
+image_name      = "ubuntu-24.04"
+agent_count     = 1
+public_key_path = "~/.ssh/lab07.pub"

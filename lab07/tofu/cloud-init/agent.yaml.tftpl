@@ -1,0 +1,16 @@
+#cloud-config
+# Rendu par OpenTofu (templatefile) — les variables du gabarit sont remplacées avant l'envoi à Nova.
+package_update: false
+
+runcmd:
+  - |
+    for i in 1 2 3 4 5; do
+      curl -sfL --retry 5 --retry-delay 5 --retry-all-errors https://get.k3s.io -o /tmp/install-k3s.sh \
+        && K3S_URL="https://${server_ip}:6443" K3S_TOKEN="${k3s_token}" \
+           sh /tmp/install-k3s.sh agent --node-name "${node_name}" \
+        && break
+      echo "Installation k3s : tentative $i échouée, nouvel essai dans 15 s"; sleep 15
+    done
+  - test -x /usr/local/bin/k3s && echo "k3s agent installed" > /var/tmp/k3s-ready
+
+final_message: "cloud-init terminé après $UPTIME s"
