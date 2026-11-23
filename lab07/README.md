@@ -14,7 +14,7 @@
 
 ## Topologie
 
-![Topologie du Lab 07 : cluster k3s sur OpenStack](images/lab07-topology.jpeg)
+![Topologie du Lab 07 : cluster k3s sur OpenStack](images/lab07-topology.png)
 
 
 > La bande **Kubernetes** représente le réseau des pods (10.42.0.0/16). Ce n'est pas un réseau OpenStack : les pods tournent **à l'intérieur** des VM, et leur trafic d'un nœud à l'autre passe dans un tunnel transporté par `k3s-net`. Neutron ne voit que les IP des VM (10.70.0.x), jamais celles des pods. Ce tunnel est créé par **flannel**, le composant réseau inclus dans k3s.
