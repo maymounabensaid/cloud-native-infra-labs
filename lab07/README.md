@@ -1,58 +1,58 @@
 # Lab 07 — Un cluster Kubernetes (k3s) sur OpenStack
 
-> **Module :** Infrastructures cloud natives — volet *orchestration*
-> **Durée :** ≈ 2 h
-> **Prérequis :** Lab 06 (OpenTofu) terminé, DevStack fonctionnel sur votre EC2
-> **Suite :** Lab 08 — déploiement d'une application sur ce cluster
 
 ## Objectifs
 
 À la fin de ce lab, vous serez capable de :
 
-- réutiliser votre code OpenTofu pour provisionner les VM d'un cluster Kubernetes : **1 serveur** et **1 ou 2 agents** ;
-- installer **k3s** automatiquement au démarrage des VM avec **cloud-init** ;
+- construire avec la CLI `openstack` l'infrastructure d'un cluster Kubernetes : réseau, routeur, groupe de sécurité, **1 VM serveur** et **1 VM agent** ;
+- installer **k3s** sur chaque VM et faire **rejoindre** l'agent au cluster ;
 - vérifier le cluster avec `kubectl get nodes`, depuis le serveur puis depuis l'EC2 ;
-- relier ce que voit Kubernetes (nœuds, pods) à ce que fournit OpenStack (instances, ports, réseau).
+- relier ce que voit Kubernetes (nœuds, pods) à ce que fournit OpenStack (instances, ports, réseaux).
 
+> **k3s** est une distribution légère et certifiée de Kubernetes (projet de la CNCF) : mêmes objets, même API, même `kubectl`, mais un seul binaire et une installation en une commande. Le **server** porte le control plane ; l'**agent** est un nœud *worker* qui exécute les pods.
 
 ## Topologie
 
 ![Topologie du Lab 07 : cluster k3s sur OpenStack](images/lab07-topology.jpeg)
 
+
 > La bande **Kubernetes** représente le réseau des pods (10.42.0.0/16). Ce n'est pas un réseau OpenStack : les pods tournent **à l'intérieur** des VM, et leur trafic d'un nœud à l'autre passe dans un tunnel transporté par `k3s-net`. Neutron ne voit que les IP des VM (10.70.0.x), jamais celles des pods. Ce tunnel est créé par **flannel**, le composant réseau inclus dans k3s.
 
 ### Les nœuds du cluster
 
-| Nœud          | Rôle Kubernetes      | Gabarit | vCPU | RAM  | Accès                                       |
-| ------------- | -------------------- | ------- | ---- | ---- | ------------------------------------------- |
-| `k3s-server`  | control plane + pods | `ds2G`  | 2    | 2 Go | IP privée + **IP flottante**                |
-| `k3s-agent-1` | worker (pods)        | `ds1G`  | 1    | 1 Go | IP privée seulement (rebond par le serveur) |
+| Nœud | Rôle Kubernetes | Gabarit | vCPU | RAM | IP privée | Accès |
+|---|---|---|---|---|---|---|
+| `k3s-server` | control plane + pods | `ds2G` | 2 | 2 Go | 10.70.0.10 | **IP flottante** 172.24.4.x |
+| `k3s-agent-1` | worker (pods) | `ds1G` | 1 | 1 Go | 10.70.0.11 | rebond par le serveur |
 
 ### Plan d'adressage
 
-| Réseau | Plage | Géré par | Contient |
-|---|---|---|---|
-| Réseau public | 172.24.4.0/24 | OpenStack (DevStack) | IP flottantes, passerelle du routeur |
-| `k3s-net` | 10.70.0.0/24 | OpenStack (Neutron) | IP des VM |
-| Réseau des pods | 10.42.0.0/16 | Kubernetes (k3s) | IP des pods |
-| Réseau des Services | 10.43.0.0/16 | Kubernetes (k3s) | IP virtuelles des Services (Lab 08) |
+| Réseau              | Plage         | Géré par             | Contient                             |
+| ------------------- | ------------- | -------------------- | ------------------------------------ |
+| Réseau public       | 172.24.4.0/24 | OpenStack (DevStack) | IP flottantes, passerelle du routeur |
+| `k3s-net`           | 10.70.0.0/24  | OpenStack (Neutron)  | IP des VM                            |
+| Réseau des pods     | 10.42.0.0/16  | Kubernetes (k3s)     | IP des pods                          |
+| Réseau des Services | 10.43.0.0/16  | Kubernetes (k3s)     | IP virtuelles des Services (Lab 08)  |
+
+> Les plages 10.42.0.0/16 (pods) et 10.43.0.0/16 (Services) sont les **valeurs par défaut de k3s**. On pourrait les changer à l'installation du serveur (`--cluster-cidr`, `--service-cidr`), mais jamais après. `k3s-net` ne doit pas les chevaucher : c'est pourquoi on a choisi 10.70.0.0/24.
 
 ### Flux réseau
 
-| De                           | Vers                           | Port      | Rôle                       |
-| ---------------------------- | ------------------------------ | --------- | -------------------------- |
-| EC2                          | `k3s-server` (IP flottante)    | 22/tcp    | SSH                        |
-| EC2                          | `k3s-server` (IP flottante)    | 6443/tcp  | `kubectl` → API Kubernetes |
-| `k3s-agent-1`                | `k3s-server`                   | 6443/tcp  | l'agent rejoint le cluster |
-| `k3s-server` ↔ `k3s-agent-1` |                                | 8472/udp  | tunnel du réseau des pods  |
-| `k3s-server` ↔ `k3s-agent-1` |                                | 10250/tcp | kubelet (métriques, logs)  |
-| VM                           | Internet (via SNAT du routeur) | 443/tcp   | téléchargement de k3s      |
+| De | Vers | Port | Rôle |
+|---|---|---|---|
+| EC2 (étudiant) | `k3s-server` (IP flottante) | 22/tcp | SSH |
+| EC2 (étudiant) | `k3s-server` (IP flottante) | 6443/tcp | `kubectl` → API Kubernetes |
+| `k3s-agent-1` | `k3s-server` | 6443/tcp | l'agent rejoint le cluster |
+| `k3s-server` ↔ `k3s-agent-1` | | 8472/udp | tunnel du réseau des pods |
+| `k3s-server` ↔ `k3s-agent-1` | | 10250/tcp | kubelet (métriques, logs) |
+| VM | Internet (via SNAT du routeur) | 443/tcp | téléchargement de k3s |
 
-> Chaque flux entrant correspond à une règle du groupe de sécurité `k3s-sg` (voir `security.tf`).
+> Chaque flux entrant correspond à une règle du groupe de sécurité `k3s-sg` (section 2.2).
 
 ---
 
-## 1. Avant de commencer : remettre DevStack en état
+## 0. Avant de commencer
 
 > Exécutez les deux scripts du dossier [`common/`](../common/) du dépôt, **dans cet ordre** :
 >
@@ -61,26 +61,13 @@
 >
 > Consultez `common/README.md` pour leur utilisation.
 
-Puis, pour tout le reste du lab :
-
-```bash
-export OS_CLOUD=demo
-```
-
-```bash
-openstack compute service list -c Binary -c State
-openstack network agent list -c "Agent Type" -c Alive
-```
-
-Tous les services doivent être `up` / `:-)` avant de continuer.
-
-## 1. Préparer l'image, la clé et `kubectl`
-
 Toutes les commandes de ce lab s'exécutent avec l'utilisateur **demo** :
 
 ```bash
 export OS_CLOUD=demo
 ```
+
+## 1. Préparer l'image, la clé et `kubectl`
 
 ### 1.1. Préparer l'image
 
@@ -109,7 +96,7 @@ openstack image create ubuntu-24.04 \
 openstack image show ubuntu-24.04 -c status -c visibility -c size -c properties
 ```
 
-> L'image est créée dans le projet `demo` avec la visibilité `shared` ou `private` : c'est suffisant, car OpenTofu travaille dans ce même projet. Seul un administrateur peut publier une image `public`.
+> L'image est créée dans le projet `demo` avec la visibilité `shared` ou `private` : c'est suffisant, car tout le lab se déroule dans ce même projet. Seul un administrateur peut publier une image `public`.
 
 **Supprimer les fichiers téléchargés** (l'image est maintenant stockée dans Glance) :
 
@@ -126,7 +113,7 @@ ssh-keygen -t ed25519 -N "" -C "lab07" -f ~/.ssh/lab07
 cat ~/.ssh/lab07.pub
 ```
 
-> Deux fichiers sont créés : `~/.ssh/lab07` (clé **privée**, qui ne quitte jamais l'EC2) et `~/.ssh/lab07.pub` (clé **publique**, qu'OpenTofu enverra à Nova pour l'injecter dans les VM). Si `ssh-keygen` demande `Overwrite (y/n)?`, la clé existe déjà : répondez **n**.
+> Deux fichiers sont créés : `~/.ssh/lab07` (clé **privée**, qui ne quitte jamais l'EC2) et `~/.ssh/lab07.pub` (clé **publique**, que Nova injectera dans les VM). Si `ssh-keygen` demande `Overwrite (y/n)?`, la clé existe déjà : répondez **n**.
 
 **Configuration de `ssh`.** Par défaut, `ssh` n'essaie que les clés standard (`id_ed25519`, `id_rsa`…). Sans configuration, il faudrait ajouter `-i ~/.ssh/lab07` à chaque commande `ssh` et `scp` du lab. On indique donc une fois pour toutes, dans `~/.ssh/config`, quelle clé utiliser pour les adresses du cluster.
 
@@ -156,7 +143,7 @@ chmod 600 ~/.ssh/config
 
 ### 1.3. Installer `kubectl`
 
-**`kubectl` sur l'EC2** — il servira à piloter le cluster depuis l'extérieur :
+`kubectl` sur l'EC2 servira à piloter le cluster depuis l'extérieur :
 
 ```bash
 curl -sLO "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
@@ -164,275 +151,308 @@ sudo install -m 0755 kubectl /usr/local/bin/kubectl && rm kubectl
 kubectl version --client
 ```
 
-**Ressources disponibles.** Vérifiez les gabarits et la mémoire libre sur l'hôte :
+> Les deux premières commandes n'affichent rien quand elles réussissent. Seule la dernière confirme l'installation (`Client Version: v1.3x.x`).
+
+### 1.4. Vérifier les ressources disponibles
 
 ```bash
 openstack flavor list -c Name -c RAM -c VCPUs -c Disk | grep -E "Name|ds1G|ds2G"
 free -h
 nproc
+df -h /
 ```
 
->Le cluster consomme ≈ 3 Go de RAM avec 1 agent (`ds2G` : 2 Go + `ds1G` : 1 Go). Sur une r8i.large (2 vCPU, 16 Gio), DevStack laisse ≈ 9 Gio disponibles : la mémoire n'est pas le problème. La limite est le **processeur** : les VM du cluster déclarent 3 vCPU, alors que l'hôte n'en a que 2, partagés avec tous les services DevStack. L'installation de k3s peut donc prendre jusqu'à 10 minutes. Gardez **`agent_count = 1`** ; vérifiez seulement que `free -h` affiche au moins 4 Go disponibles (sinon, des instances des labs précédents tournent encore).
+> Le cluster consomme ≈ 3 Go de RAM (`ds2G` : 2 Go + `ds1G` : 1 Go). Sur une r8i.large (2 vCPU, 16 Gio), DevStack laisse ≈ 9 Gio disponibles : la mémoire n'est pas le problème. La limite est le **processeur** : les deux VM déclarent 3 vCPU, alors que l'hôte n'en a que 2, partagés avec tous les services DevStack. Les VM seront donc lentes à démarrer. Vérifiez seulement que `free -h` affiche au moins 4 Go disponibles et `df -h /` au moins 10 Go.
 
-## 2. Le projet OpenTofu du cluster
+---
 
-### 2.1. Télécharger le projet
+## 2. Construire l'infrastructure (couche OpenStack)
+
+On crée, dans l'ordre, tout ce qui figure sur la topologie : le réseau, la sécurité, puis les deux VM.
+
+### 2.1. Le réseau
 
 ```bash
-mkdir -p ~/lab07-tofu && cd ~/lab07-tofu
-curl -sL https://github.com/maymounabensaid/cloud-native-infra-labs/archive/refs/heads/main.tar.gz \
-  | tar -xz --strip-components=3 cloud-native-infra-labs-main/lab07/tofu
-ls -R
+openstack network create k3s-net
+openstack subnet create k3s-subnet \
+  --network k3s-net \
+  --subnet-range 10.70.0.0/24 \
+  --dns-nameserver 8.8.8.8 --dns-nameserver 1.1.1.1
+openstack router create k3s-router
+openstack router set k3s-router --external-gateway public
+openstack router add subnet k3s-router k3s-subnet
 ```
 
-> `curl` télécharge l'archive du dépôt du cours ; `tar` n'en extrait que le dossier `lab07/tofu`, directement dans `~/lab07-tofu`.
+> Le routeur relie `k3s-net` au réseau `public` : il fera la **SNAT** (les VM téléchargeront k3s depuis Internet) et la **DNAT** de l'IP flottante du serveur. Les serveurs DNS sont distribués aux VM par le DHCP de Neutron.
 
+### 2.2. Le groupe de sécurité
 
-`ls -R` doit afficher l'arborescence suivante :
-
-```
-~/lab07-tofu/
-├── providers.tf               # providers OpenStack et random
-├── variables.tf               # paramètres du projet
-├── network.tf                 # réseau, sous-réseau, routeur
-├── security.tf                # groupe de sécurité et ses règles
-├── compute.tf                 # jeton, clé, ports, IP flottante, VM
-├── outputs.tf                 # valeurs affichées après tofu apply
-├── terraform.tfvars.example   # modèle de fichier de valeurs
-└── cloud-init/
-    ├── server.yaml.tftpl      # script d'installation de k3s (serveur)
-    └── agent.yaml.tftpl       # script d'installation de k3s (agent)
-```
-
-Le dossier contient trois types de fichiers :
-
-| Type | Fichiers | Rôle |
-|---|---|---|
-| Code OpenTofu (`.tf`) | `providers.tf`, `variables.tf`, `network.tf`, `security.tf`, `compute.tf`, `outputs.tf` | décrivent l'infrastructure à créer ; détaillés en section 2.2 |
-| Valeurs (`.tfvars`) | `terraform.tfvars.example` | modèle des valeurs du projet ; on le copie en `terraform.tfvars` pour l'utiliser |
-| Gabarits cloud-init (`.tftpl`) | `cloud-init/server.yaml.tftpl`, `cloud-init/agent.yaml.tftpl` | scripts exécutés au premier démarrage des VM ; OpenTofu les remplit avant de les envoyer à Nova (section 2.4) |
-
-> D'autres fichiers apparaîtront dans ce dossier au fil du lab, créés par OpenTofu : `.terraform/` et `.terraform.lock.hcl` (après `tofu init`), `lab07.plan` (après `tofu plan`), et surtout `terraform.tfstate` (après `tofu apply`), qui garde la trace de toutes les ressources créées.
-
+Un seul groupe, `k3s-sg`, appliqué aux deux VM. Il contient deux types de règles :
 
 ```bash
-cp terraform.tfvars.example terraform.tfvars
-cat terraform.tfvars
+openstack security group create k3s-sg --description "Lab 07 - noeuds du cluster k3s"
+
+# Accès depuis l'EC2 (source : n'importe quelle adresse)
+openstack security group rule create k3s-sg --protocol tcp  --dst-port 22   --remote-ip 0.0.0.0/0
+openstack security group rule create k3s-sg --protocol icmp                 --remote-ip 0.0.0.0/0
+openstack security group rule create k3s-sg --protocol tcp  --dst-port 6443 --remote-ip 0.0.0.0/0
+
+# Trafic entre les nœuds du cluster (source : les membres du groupe lui-même)
+openstack security group rule create k3s-sg --protocol tcp --dst-port 6443  --remote-group k3s-sg
+openstack security group rule create k3s-sg --protocol udp --dst-port 8472  --remote-group k3s-sg
+openstack security group rule create k3s-sg --protocol tcp --dst-port 10250 --remote-group k3s-sg
+
+openstack security group rule list k3s-sg
 ```
 
+| Règle | Port | Source | Rôle |
+|---|---|---|---|
+| SSH | 22/tcp | toute adresse | connexion depuis l'EC2 |
+| ICMP | — | toute adresse | `ping` |
+| API Kubernetes | 6443/tcp | toute adresse | `kubectl` depuis l'EC2 |
+| API entre nœuds | 6443/tcp | membres de `k3s-sg` | l'agent s'enregistre auprès du serveur |
+| Tunnel des pods | 8472/udp | membres de `k3s-sg` | trafic entre pods de nœuds différents |
+| Kubelet | 10250/tcp | membres de `k3s-sg` | métriques, `kubectl logs` |
 
-Vérifiez les valeurs de `terraform.tfvars` :
+> Neutron ajoute aussi automatiquement deux règles **sortantes** (IPv4 et IPv6) qui autorisent tout le trafic au départ des VM.
 
-```hcl
-cloud           = "demo"
-agent_count     = 1
-public_key_path = "~/.ssh/lab07.pub"
-```
+> **Q1.** Les trois dernières règles utilisent `--remote-group k3s-sg` au lieu d'une adresse IP. Que signifie cette source ? Quel avantage cela apporte-t-il si l'on ajoute un deuxième agent plus tard ?
 
->  Lancez toujours `tofu` **depuis ce dossier** (`cd ~/lab07-tofu`). OpenTofu lit les fichiers `.tf` et écrit son état (`terraform.tfstate`) dans le dossier courant.
-
-### 2.2. Ce que déclare chaque fichier
-
-OpenTofu lit **tous** les fichiers `.tf` du dossier comme un seul ensemble : le découpage en fichiers sert seulement à organiser le code.
-
-| Fichier                        | Ce qu'il déclare                                                                                                                                                                       |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `providers.tf`                 | les deux providers utilisés : **OpenStack** (authentification avec le profil `demo` de `clouds.yaml`) et **random** (génération du jeton k3s)                                          |
-| `variables.tf`                 | les paramètres du projet : noms, gabarits, nombre d'agents, clé SSH, plages d'adresses (tableau ci-dessous)                                                                            |
-| `network.tf`                   | le réseau privé `k3s-net`, son sous-réseau `10.70.0.0/24`, le routeur `k3s-router` relié au réseau `public`, et l'interface qui les connecte                                           |
-| `security.tf`                  | le groupe de sécurité `k3s-sg` et ses 7 règles : 4 pour l'accès depuis l'EC2 (SSH, ICMP, API Kubernetes, NodePorts), 3 pour le trafic **entre les nœuds** (`remote_group_id`)          |
-| `compute.tf`                   | le cœur du cluster : le jeton k3s, la paire de clés, un port Neutron par nœud, l'IP flottante du serveur, puis les instances `k3s-server` et `k3s-agent-N` (`count = var.agent_count`) |
-| `outputs.tf`                   | les valeurs affichées après `tofu apply` : IP flottante, IP privées, commandes SSH                                                                                                     |
-| `cloud-init/server.yaml.tftpl` | le script exécuté au premier démarrage du serveur : installe k3s en mode **server**                                                                                                    |
-| `cloud-init/agent.yaml.tftpl`  | le script exécuté au premier démarrage d'un agent : installe k3s en mode **agent** et rejoint le serveur                                                                               |
-
-### 2.3. Les variables
-
-| Variable | Valeur par défaut | Rôle |
-|---|---|---|
-| `cloud` | `demo` | profil de `clouds.yaml` utilisé pour s'authentifier |
-| `prefix` | `k3s` | préfixe du nom de toutes les ressources |
-| `external_network` | `public` | réseau externe de DevStack, qui fournit les IP flottantes |
-| `image_name` | `ubuntu-24.04` | image Glance créée en section 1 |
-| `server_flavor` | `ds2G` | gabarit du serveur |
-| `agent_flavor` | `ds1G` | gabarit des agents |
-| `agent_count` | `1` | nombre d'agents |
-| `public_key_path` | `~/.ssh/lab07.pub` | clé publique injectée dans les VM |
-| `subnet_cidr` | `10.70.0.0/24` | plage d'adresses des VM |
-| `dns_nameservers` | `8.8.8.8`, `1.1.1.1` | serveurs DNS donnés aux VM par Neutron |
-| `admin_cidr` | `0.0.0.0/0` | origine autorisée pour SSH, l'API et les NodePorts |
-
-> Pour changer une valeur sans modifier le code : `terraform.tfvars`, ou `tofu apply -var agent_count=1`.
-
-### 2.4. Le lien entre OpenTofu et cloud-init
-
-OpenTofu ne fait **pas** l'installation de Kubernetes : il crée les VM et leur transmet un script cloud-init (`user_data`), exécuté au premier démarrage. La fonction `templatefile()` remplit chaque script avec des valeurs que seul OpenTofu connaît :
-
-| Valeur insérée | Dans le script | D'où vient-elle |
-|---|---|---|
-| `k3s_token` | serveur et agents | `random_password` : le même jeton pour tous les nœuds |
-| `floating_ip` | serveur | l'IP flottante, allouée **avant** la VM |
-| `server_ip` | agents | l'IP du port du serveur, connue **avant** la VM |
-| `node_name` | serveur et agents | nom du nœud dans Kubernetes |
-
-Script du serveur (`cloud-init/server.yaml.tftpl`) :
-
-```yaml
-#cloud-config
-package_update: false
-
-runcmd:
-  - |
-    for i in 1 2 3 4 5; do
-      curl -sfL --retry 5 --retry-delay 5 --retry-all-errors https://get.k3s.io -o /tmp/install-k3s.sh \
-        && K3S_TOKEN="${k3s_token}" sh /tmp/install-k3s.sh server \
-             --node-name "${node_name}" \
-             --write-kubeconfig-mode 644 \
-             --tls-san "${floating_ip}" \
-             --disable traefik \
-        && break
-      echo "Installation k3s : tentative $i échouée, nouvel essai dans 15 s"; sleep 15
-    done
-  - test -x /usr/local/bin/k3s && echo "k3s server installed" > /var/tmp/k3s-ready
-```
-
-Script de l'agent (`cloud-init/agent.yaml.tftpl`) :
-
-```yaml
-#cloud-config
-package_update: false
-
-runcmd:
-  - |
-    for i in 1 2 3 4 5; do
-      curl -sfL --retry 5 --retry-delay 5 --retry-all-errors https://get.k3s.io -o /tmp/install-k3s.sh \
-        && K3S_URL="https://${server_ip}:6443" K3S_TOKEN="${k3s_token}" \
-           sh /tmp/install-k3s.sh agent --node-name "${node_name}" \
-        && break
-      echo "Installation k3s : tentative $i échouée, nouvel essai dans 15 s"; sleep 15
-    done
-  - test -x /usr/local/bin/k3s && echo "k3s agent installed" > /var/tmp/k3s-ready
-```
-
-## 3. Appliquer
+### 2.3. La paire de clés
 
 ```bash
-tofu init
-tofu plan -out lab07.plan
+openstack keypair create k3s-key --public-key ~/.ssh/lab07.pub
 ```
 
-> **Q2.** Combien de ressources le plan va-t-il créer ? Lesquelles sont des ressources **OpenStack** et laquelle n'en est pas une ?
+### 2.4. Les deux VM
+
+Chaque VM reçoit une **adresse IP fixe** dans `k3s-net` : l'agent devra connaître l'adresse du serveur pour rejoindre le cluster.
 
 ```bash
-tofu apply lab07.plan
-tofu output
-```
+NET_ID=$(openstack network show k3s-net -f value -c id)
 
-## 4. Suivre le démarrage des nœuds
+openstack server create k3s-server \
+  --image ubuntu-24.04 --flavor ds2G --key-name k3s-key \
+  --nic net-id=$NET_ID,v4-fixed-ip=10.70.0.10 \
+  --security-group k3s-sg --wait
 
-OpenStack a démarré les VM. Kubernetes n'existe pas encore : cloud-init est en train de l'installer.
+openstack server create k3s-agent-1 \
+  --image ubuntu-24.04 --flavor ds1G --key-name k3s-key \
+  --nic net-id=$NET_ID,v4-fixed-ip=10.70.0.11 \
+  --security-group k3s-sg --wait
 
-```bash
 openstack server list
-openstack console log show k3s-server | tail -20
 ```
 
+> `--wait` rend la main quand la VM est `ACTIVE`.  Comptez quelques minutes par VM : la virtualisation est imbriquée.
+
+**L'IP flottante du serveur** — seul le serveur est joignable depuis l'EC2 :
+
 ```bash
-FIP=$(tofu output -raw server_floating_ip)
-ssh -o StrictHostKeyChecking=accept-new ubuntu@$FIP 'cloud-init status --wait'
-ssh ubuntu@$FIP 'cat /var/tmp/k3s-ready; sudo tail -5 /var/log/cloud-init-output.log'
+FIP=$(openstack floating ip create public -f value -c floating_ip_address)
+openstack server add floating ip k3s-server $FIP
+echo $FIP
 ```
 
-> Comptez 3 à 6 minutes. La virtualisation est imbriquée : les VM sont lentes.
-
-**En cas de problème** — les nœuds doivent pouvoir télécharger k3s depuis Internet :
+**Sauvegarder les adresses** dans un fichier, pour les retrouver dans un nouveau terminal :
 
 ```bash
-ssh ubuntu@$FIP 'curl -sI https://get.k3s.io | head -1'   # attendu : HTTP/2 200
+cat > ~/lab07.env <<EOF
+FIP=$FIP
+SERVER_IP=10.70.0.10
+AGENT_IP=10.70.0.11
+EOF
+source ~/lab07.env
 ```
 
-Si la commande échoue, vérifiez la NAT de DevStack vers Internet sur l'EC2 :
-`sudo iptables -t nat -S POSTROUTING | grep 172.24.4` (voir `common/README.md`).
+> Dans tout nouveau terminal : `source ~/lab07.env` et `export OS_CLOUD=demo`.
 
-## 5. Vérifier le cluster
-
-**Depuis le serveur** (k3s installe `kubectl`) :
+**Attendre que les VM soient prêtes** (démarrage terminé, clé SSH installée) :
 
 ```bash
-ssh ubuntu@$FIP
-kubectl get nodes -o wide
-kubectl get pods -A
-exit
+ssh $FIP 'cloud-init status --wait'
+ssh -J $FIP $AGENT_IP 'cloud-init status --wait'
+```
+
+> Si `ssh` répond `Connection refused` ou `Connection timed out`, la VM n'a pas fini de démarrer : attendez une minute et relancez.
+
+> `ssh -J $FIP $AGENT_IP` se connecte à l'agent **en rebond** par le serveur : l'agent n'a pas d'IP flottante, il n'est joignable que depuis `k3s-net`.
+
+> **Q2.** Pourquoi seul le serveur reçoit-il une IP flottante ? Par quel chemin (voir la topologie) votre commande `ssh` atteint-elle l'agent ?
+
+---
+
+## 3. Installer k3s (couche Kubernetes)
+
+L'infrastructure est prête : deux VM Ubuntu vides. On installe maintenant Kubernetes, nœud par nœud. Les commandes sont lancées **depuis l'EC2** : `ssh <adresse> "commande"` exécute la commande sur la VM et affiche le résultat ici.
+
+### 3.1. Vérifier l'accès à Internet depuis les VM
+
+k3s se télécharge depuis Internet, via la SNAT du routeur :
+
+```bash
+ssh $FIP 'curl -sI https://get.k3s.io | head -1'                  # attendu : HTTP/2 200
+ssh -J $FIP $AGENT_IP 'curl -sI https://get.k3s.io | head -1'
+```
+
+> Si la commande échoue, vérifiez la NAT de DevStack vers Internet sur l'EC2 (voir `common/README.md`).
+
+### 3.2. Installer le serveur
+
+```bash
+ssh $FIP "curl -sfL https://get.k3s.io | sh -s - server \
+  --node-name k3s-server \
+  --write-kubeconfig-mode 644 \
+  --tls-san $FIP \
+  --disable traefik"
+```
+
+| Option | Rôle |
+|---|---|
+| `server` | installe le control plane (API, ordonnanceur, contrôleurs, base de données du cluster) |
+| `--node-name k3s-server` | nom du nœud dans Kubernetes |
+| `--write-kubeconfig-mode 644` | permet à l'utilisateur `ubuntu` d'utiliser `kubectl` sur le serveur sans `sudo` |
+| `--tls-san $FIP` | ajoute l'IP flottante au certificat de l'API, pour utiliser `kubectl` **depuis l'EC2** |
+| `--disable traefik` | k3s installe par défaut un Ingress Controller (Traefik) ; on le désactive pour économiser la mémoire des petites VM |
+
+Vérifier que le serveur fonctionne :
+
+```bash
+ssh $FIP 'sudo systemctl is-active k3s'        # attendu : active
+ssh $FIP 'kubectl get nodes'
+```
+
+> Le nœud peut rester `NotReady` une à deux minutes après l'installation : relancez `kubectl get nodes`.
+
+### 3.3. Récupérer le jeton du cluster
+
+Pour rejoindre le cluster, un agent doit présenter un **jeton** (*token*), généré par le serveur à l'installation :
+
+```bash
+TOKEN=$(ssh $FIP 'sudo cat /var/lib/rancher/k3s/server/node-token')
+echo $TOKEN
+```
+
+> **Q3.** Quelles sont les **deux** informations dont un agent a besoin pour rejoindre un cluster k3s ? Où se trouve chacune d'elles ?
+
+### 3.4. Installer l'agent et rejoindre le cluster
+
+```bash
+ssh -J $FIP $AGENT_IP "curl -sfL https://get.k3s.io | \
+  K3S_URL=https://$SERVER_IP:6443 K3S_TOKEN=$TOKEN \
+  sh -s - agent --node-name k3s-agent-1"
+```
+
+| Élément | Rôle |
+|---|---|
+| `agent` | installe uniquement les composants d'un *worker* (kubelet, exécution des conteneurs, réseau des pods) |
+| `K3S_URL=https://$SERVER_IP:6443` | adresse de l'API du serveur, **dans `k3s-net`** (10.70.0.10) |
+| `K3S_TOKEN=$TOKEN` | le jeton récupéré à l'étape précédente |
+
+```bash
+ssh -J $FIP $AGENT_IP 'sudo systemctl is-active k3s-agent'     # attendu : active
+```
+
+> **Q4.** L'agent contacte le serveur sur son IP **privée** (10.70.0.10) et non sur son IP flottante. Pourquoi ? Quelle règle du groupe de sécurité rend cette connexion possible, et que se passerait-il sans elle ?
+
+---
+
+## 4. Vérifier le cluster
+
+**Depuis le serveur** :
+
+```bash
+ssh $FIP 'kubectl get nodes -o wide'
+ssh $FIP 'kubectl get pods -A'
 ```
 
 **Depuis l'EC2**, en utilisant l'API exposée par l'IP flottante :
 
 ```bash
 mkdir -p ~/.kube
-scp ubuntu@$FIP:/etc/rancher/k3s/k3s.yaml ~/.kube/lab07.yaml
+scp $FIP:/etc/rancher/k3s/k3s.yaml ~/.kube/lab07.yaml
 sed -i "s/127.0.0.1/$FIP/" ~/.kube/lab07.yaml
 export KUBECONFIG=~/.kube/lab07.yaml
 kubectl get nodes -o wide
 ```
 
-Résultat attendu (les IP varient) :
+> Le fichier `k3s.yaml` contient l'adresse de l'API et les certificats d'accès. Sur le serveur, l'API est jointe en local (`127.0.0.1`) ; depuis l'EC2, on la remplace par l'IP flottante.
+
+Résultat attendu (les versions varient) :
 
 ```
-NAME          STATUS   ROLES                  AGE   VERSION        INTERNAL-IP
-k3s-agent-1   Ready    <none>                 3m    v1.3x.x+k3s1   10.70.0.x
-k3s-server    Ready    control-plane,master   4m    v1.3x.x+k3s1   10.70.0.y
+NAME          STATUS   ROLES           AGE   VERSION        INTERNAL-IP
+k3s-agent-1   Ready    <none>          3m    v1.3x.x+k3s1   10.70.0.11
+k3s-server    Ready    control-plane   6m    v1.3x.x+k3s1   10.70.0.10
 ```
 
-## 6. Le cluster vu d'OpenStack
+> Selon la version de k3s, la colonne `ROLES` du serveur affiche `control-plane` ou `control-plane,master`.
 
-Kubernetes voit des **nœuds**. OpenStack voit des **instances**, des **ports** et un **réseau**. Faisons le lien.
+> **Q5.** Si l'agent n'apparaît pas dans la liste, proposez **deux** commandes de diagnostic : une côté OpenStack, une côté nœud.
 
-**Nœuds ↔ ports Neutron**
+---
+## 5. Le cluster vu d'OpenStack
+
+Kubernetes voit des **nœuds** et des **pods**. OpenStack voit des **instances** et des **ports**. Comparez les deux points de vue :
 
 ```bash
-kubectl get nodes -o custom-columns=NODE:.metadata.name,IP:.status.addresses[0].address
-openstack port list --network k3s-net -c Name -c "Fixed IP Addresses"
+ssh $FIP 'kubectl get pods -A -o wide'
+openstack port list --network k3s-net -c "Fixed IP Addresses"
 ```
 
-**Pods ↔ Neutron**
+> **Q6.** Relevez les IP des deux nœuds et celles des pods. Lesquelles apparaissent dans `openstack port list` ? Que pouvez-vous en conclure sur ce que Neutron « voit » du cluster ? (Aidez-vous de la topologie.)
+
+
+---
+
+## 6. Nettoyage (obligatoire)
 
 ```bash
-kubectl get pods -A -o wide
+openstack server delete --wait k3s-server k3s-agent-1
+openstack floating ip delete $FIP
+openstack router remove subnet k3s-router k3s-subnet
+openstack router delete k3s-router
+openstack network delete k3s-net            # supprime aussi le sous-réseau k3s-subnet
+openstack security group delete k3s-sg
+openstack keypair delete k3s-key
 ```
 
-**MTU : un tunnel dans un tunnel**
+Fichiers locaux sur l'EC2 :
 
 ```bash
-openstack network show k3s-net -c mtu
-ssh ubuntu@$FIP 'ip -br link show | grep -E "ens|flannel"'
+rm -f ~/.kube/lab07.yaml ~/lab07.env && unset KUBECONFIG
+ssh-keygen -R $FIP; ssh-keygen -R 10.70.0.10; ssh-keygen -R 10.70.0.11
 ```
 
-**Instances ↔ hyperviseur**
+Vérification (les listes ne doivent plus contenir de ressource `k3s-*`) :
 
 ```bash
-sudo virsh list
-openstack --os-cloud devstack-admin server show k3s-server -c OS-EXT-SRV-ATTR:instance_name
-```
-
-**Le jeton du cluster ↔ le service de métadonnées de Nova**
-
-```bash
-ssh ubuntu@$FIP 'curl -s http://169.254.169.254/openstack/latest/user_data | grep K3S_TOKEN'
-grep '"result"' terraform.tfstate     # le jeton généré par random_password
-```
-
-## 7. Nettoyage (obligatoire)
-
-Le cluster est entièrement décrit par votre code : on le **détruit**. Au Lab 08, vous le recréerez en quelques minutes avec `tofu apply`.
-
-```bash
-cd ~/lab07-tofu && tofu destroy
 openstack server list
 openstack floating ip list
 openstack network list
-rm -f ~/.kube/lab07.yaml && unset KUBECONFIG
+openstack security group list
 ```
 
-> Gardez le dossier `~/lab07-tofu` et l'image `ubuntu-24.04` : ils resserviront au Lab 08.
+> Vous pouvez conserver l'image `ubuntu-24.04` et la clé `~/.ssh/lab07`.
 
 ---
+
+## Automatisation avec Opentofu — Le même cluster en une seule commande
+
+Vous avez construit le cluster à la main : une vingtaine de commandes, dans un ordre précis, en recopiant des adresses et un jeton d'une étape à l'autre. Le dossier [`tofu/`](tofu/) décrit **exactement la même infrastructure** avec OpenTofu, et installe k3s automatiquement au démarrage des VM avec cloud-init.
+
+> Faites d'abord le nettoyage de la section 6 : les ressources portent les mêmes noms.
+
+```bash
+mkdir -p ~/lab07-tofu && cd ~/lab07-tofu
+curl -sL https://github.com/maymounabensaid/cloud-native-infra-labs/archive/refs/heads/main.tar.gz \
+  | tar -xz --strip-components=3 cloud-native-infra-labs-main/lab07/tofu
+cp terraform.tfvars.example terraform.tfvars
+tofu init
+tofu apply
+```
+
+Comparez le temps nécessaire et retrouvez, dans les fichiers `.tf` et `cloud-init/*.tftpl`, chacune des commandes que vous avez tapées. Terminez par `tofu destroy`. 
+
+---
+ 
