@@ -75,6 +75,16 @@ cat ~/.config/openstack/clouds.yaml
 mkdir -p ~/.config/openstack
 cat > ~/.config/openstack/clouds.yaml <<'EOF'
 clouds:
+  admin:
+    auth:
+      auth_url: http://localhost/identity
+      username: admin
+      password: 'secret'
+      project_name: admin
+      user_domain_name: Default
+      project_domain_name: Default
+    region_name: RegionOne
+    identity_api_version: 3
   demo:
     auth:
       auth_url: http://localhost/identity
