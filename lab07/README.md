@@ -39,14 +39,14 @@
 
 ### Flux réseau
 
-| De | Vers | Port | Rôle |
-|---|---|---|---|
-| EC2 (étudiant) | `k3s-server` (IP flottante) | 22/tcp | SSH |
-| EC2 (étudiant) | `k3s-server` (IP flottante) | 6443/tcp | `kubectl` → API Kubernetes |
-| `k3s-agent-1` | `k3s-server` | 6443/tcp | l'agent rejoint le cluster |
-| `k3s-server` ↔ `k3s-agent-1` | | 8472/udp | tunnel du réseau des pods |
-| `k3s-server` ↔ `k3s-agent-1` | | 10250/tcp | kubelet (métriques, logs) |
-| VM | Internet (via SNAT du routeur) | 443/tcp | téléchargement de k3s |
+| De                           | Vers                           | Port      | Rôle                       |
+| ---------------------------- | ------------------------------ | --------- | -------------------------- |
+| EC2                          | `k3s-server` (IP flottante)    | 22/tcp    | SSH                        |
+| EC2                          | `k3s-server` (IP flottante)    | 6443/tcp  | `kubectl` → API Kubernetes |
+| `k3s-agent-1`                | `k3s-server`                   | 6443/tcp  | l'agent rejoint le cluster |
+| `k3s-server` ↔ `k3s-agent-1` |                                | 8472/udp  | tunnel du réseau des pods  |
+| `k3s-server` ↔ `k3s-agent-1` |                                | 10250/tcp | kubelet (métriques, logs)  |
+| VM                           | Internet (via SNAT du routeur) | 443/tcp   | téléchargement de k3s      |
 
 > Chaque flux entrant correspond à une règle du groupe de sécurité `k3s-sg` (section 2.2).
 
