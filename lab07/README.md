@@ -3,12 +3,10 @@
 
 ## Objectifs
 
-À la fin de ce lab, vous serez capable de :
-
-- construire avec la CLI `openstack` l'infrastructure d'un cluster Kubernetes : réseau, routeur, groupe de sécurité, **1 VM serveur** et **1 VM agent** ;
-- installer **k3s** sur chaque VM et faire **rejoindre** l'agent au cluster ;
-- vérifier le cluster avec `kubectl get nodes`, depuis le serveur puis depuis l'EC2 ;
-- relier ce que voit Kubernetes (nœuds, pods) à ce que fournit OpenStack (instances, ports, réseaux).
+- Construire avec la CLI `openstack` l'infrastructure d'un cluster Kubernetes : réseau, routeur, groupe de sécurité, **1 VM serveur** et **1 VM agent** ;
+- Installer **k3s** sur chaque VM et faire **rejoindre** l'agent au cluster ;
+- Vérifier le cluster avec `kubectl get nodes`, depuis le serveur puis depuis l'EC2 ;
+- Relier ce que voit Kubernetes (nœuds, pods) à ce que fournit OpenStack (instances, ports, réseaux).
 
 > **k3s** est une distribution légère et certifiée de Kubernetes (projet de la CNCF) : mêmes objets, même API, même `kubectl`, mais un seul binaire et une installation en une commande. Le **server** porte le control plane ; l'**agent** est un nœud *worker* qui exécute les pods.
 
@@ -408,6 +406,8 @@ openstack port list --network k3s-net -c "Fixed IP Addresses"
 ## 6. Nettoyage (obligatoire)
 
 ```bash
+source ~/lab07.env
+export OS_CLOUD=demo
 openstack server delete --wait k3s-server k3s-agent-1
 openstack floating ip delete $FIP
 openstack router remove subnet k3s-router k3s-subnet
