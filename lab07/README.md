@@ -31,9 +31,9 @@
 | Réseau public       | 172.24.4.0/24 | OpenStack (DevStack) | IP flottantes, passerelle du routeur |
 | `k3s-net`           | 10.70.0.0/24  | OpenStack (Neutron)  | IP des VM                            |
 | Réseau des pods     | 10.42.0.0/16  | Kubernetes (k3s)     | IP des pods                          |
-| Réseau des Services | 10.43.0.0/16  | Kubernetes (k3s)     | IP virtuelles des Services (Lab 08)  |
 
-> Les plages 10.42.0.0/16 (pods) et 10.43.0.0/16 (Services) sont les **valeurs par défaut de k3s**. On pourrait les changer à l'installation du serveur (`--cluster-cidr`, `--service-cidr`), mais jamais après. `k3s-net` ne doit pas les chevaucher : c'est pourquoi on a choisi 10.70.0.0/24.
+
+> La plage d'adresses 10.42.0.0/16 (pods)  sont les **valeurs par défaut de k3s**. On pourrait les changer à l'installation du serveur (`--cluster-cidr`, `--service-cidr`), mais jamais après. `k3s-net` ne doit pas les chevaucher : c'est pourquoi on a choisi 10.70.0.0/24.
 
 ### Flux réseau
 
@@ -193,7 +193,7 @@ openstack security group create k3s-sg --description "Lab 07 - noeuds du cluster
 # Accès depuis l'EC2 (source : n'importe quelle adresse)
 openstack security group rule create k3s-sg --protocol tcp  --dst-port 22   --remote-ip 0.0.0.0/0
 openstack security group rule create k3s-sg --protocol icmp                 --remote-ip 0.0.0.0/0
-openstack security group rule create k3s-sg --protocol tcp  --dst-port 6443 --remote-ip 0.0.0.0/0
+openstack security group rule create k3s-sg --protocol tcp  --dst-port 6443 --remote-ip 172.24.4.0/24
 
 # Trafic entre les nœuds du cluster (source : les membres du groupe lui-même)
 openstack security group rule create k3s-sg --protocol tcp --dst-port 6443  --remote-group k3s-sg
